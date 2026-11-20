@@ -1,0 +1,22 @@
+{
+  "document_type": "PURCHASE_ORDER",
+  "vendor": null,
+  "invoice_number": null,
+  "invoice_date": null,
+  "currency": null,
+  "line_items": null,
+  "tax_total": null,
+  "total": null,
+  "needs_review": false,
+  "review_reasons": [],
+  "unavailable_reason": null,
+  "meta": {
+    "route": "text_layer",
+    "model": "gemini-3.5-flash",
+    "attempts": 1,
+    "input_tokens": 1059,
+    "output_tokens": 411,
+    "cost_usd": 0.002335
+  },
+  "is_invoice": false
+}
