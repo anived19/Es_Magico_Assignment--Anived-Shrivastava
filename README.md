@@ -120,6 +120,38 @@ python extract.py data/documents/L01.pdf --no-cache
 python evaluate.py --no-cache
 ```
 
+### Optional OCR Grounding Cross-Check (Phase 2)
+To enable EasyOCR text grounding for vision-route scans and photos:
+```bash
+pip install -r requirements-ocr.txt
+python extract.py data/documents/L02.jpg --ocr-check
+python evaluate.py --ocr-check
+```
+*Note: OCR grounding is optional and flag-gated. It runs dual EasyOCR readers (`['en', 'hi', 'mr']` and `['en', 'kn']` on CPU) and applies fuzzy matching (`partial_ratio >= 90`) on invoice numbers.*
+
+### Web Application & Visual Inspector (Phase 3)
+To run the interactive side-by-side web application and API:
+```bash
+pip install -r requirements-app.txt
+python -m uvicorn app:app --port 8000 --reload
+# Or directly:
+python app.py
+```
+Open [http://localhost:8000](http://localhost:8000) in your browser:
+- **Side-by-side split view**: View uploaded document (PDF via iframe or mobile photo/scan via img) on the left pane and real-time extraction results on the right pane.
+- **Verification & Review**: Instant `PASS` vs `NEEDS REVIEW` banner with granular failure reason tags and unreadable file alerts.
+- **Itemized Table & Cost Accounting**: Table for extracted line items, breakdown of token usage, and live USD cost tracking.
+- **Raw JSON Inspector**: Accordion view of the full structured JSON response with one-click clipboard copy.
+
+#### API Endpoint: `POST /extract`
+Accepts a document file via `multipart/form-data`:
+```bash
+curl -F "file=@data/documents/L01.pdf" "http://localhost:8000/extract"
+```
+Optional query parameters:
+- `no_cache=true` (bypasses disk cache)
+- `ocr_check=true` (enables Phase 2 OCR cross-check)
+
 ---
 
 ## Matching Rules

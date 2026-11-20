@@ -36,6 +36,11 @@ def main() -> int:
         help="JSON report destination",
     )
     parser.add_argument("--no-cache", action="store_true", help="Bypass response disk caching")
+    parser.add_argument(
+        "--ocr-check",
+        action="store_true",
+        help="Enable EasyOCR text grounding for vision route scans",
+    )
     args = parser.parse_args()
 
     if args.no_cache:
@@ -72,7 +77,7 @@ def main() -> int:
         logger.info("Evaluating %s (%s)", lf.stem, doc_path.name)
         expected = json.loads(lf.read_text(encoding="utf-8"))
         data = doc_path.read_bytes()
-        res = process(data)
+        res = process(data, ocr_check=args.ocr_check)
         predicted = res.model_dump()
         eval_result = evaluate_document(predicted, expected)
         records.append(

@@ -3,7 +3,9 @@
 import re
 from datetime import date, timedelta
 
-from invoice_extractor.config import TOTALS_TOLERANCE
+from rapidfuzz import fuzz
+
+from invoice_extractor.config import OCR_FUZZY_RATIO, TOTALS_TOLERANCE
 from invoice_extractor.schema import DocumentType, Invoice, Issue, IssueCode
 
 
@@ -115,8 +117,12 @@ def _check_totals(invoice: Invoice) -> Issue | None:
     return None
 
 
-def _check_grounding(invoice: Invoice, source_text: str | None) -> list[Issue]:
-    """Ground extracted invoice number and total directly against digital text layer."""
+def _check_grounding(
+    invoice: Invoice,
+    source_text: str | None,
+    is_ocr: bool = False,
+) -> list[Issue]:
+    """Ground extracted invoice number and total directly against digital text layer or OCR."""
     if not source_text or invoice.is_invoice is not True:
         return []
     issues: list[Issue] = []
@@ -124,7 +130,11 @@ def _check_grounding(invoice: Invoice, source_text: str | None) -> list[Issue]:
     if invoice.invoice_number:
         clean_inv = re.sub(r"[^\w]", "", invoice.invoice_number.lower())
         clean_src = re.sub(r"[^\w]", "", source_text.lower())
-        if clean_inv not in clean_src:
+        if is_ocr:
+            grounded = fuzz.partial_ratio(clean_inv, clean_src) >= OCR_FUZZY_RATIO
+        else:
+            grounded = clean_inv in clean_src
+        if not grounded:
             issues.append(
                 Issue(
                     IssueCode.NOT_IN_SOURCE_TEXT,
@@ -153,7 +163,11 @@ def _check_grounding(invoice: Invoice, source_text: str | None) -> list[Issue]:
     return issues
 
 
-def run_checks(invoice: Invoice, source_text: str | None = None) -> list[Issue]:
+def run_checks(
+    invoice: Invoice,
+    source_text: str | None = None,
+    is_ocr: bool = False,
+) -> list[Issue]:
     """Execute all pure deterministic validation checks against an extracted invoice."""
     issues: list[Issue] = []
     non_inv_issue = _check_non_invoice_fields(invoice)
@@ -172,5 +186,5 @@ def run_checks(invoice: Invoice, source_text: str | None = None) -> list[Issue]:
     totals_issue = _check_totals(invoice)
     if totals_issue:
         issues.append(totals_issue)
-    issues.extend(_check_grounding(invoice, source_text))
+    issues.extend(_check_grounding(invoice, source_text, is_ocr=is_ocr))
     return issues

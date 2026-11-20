@@ -17,10 +17,10 @@ logging.basicConfig(
 logger = logging.getLogger("extract")
 
 
-def _process_file(file_path: Path) -> dict:
+def _process_file(file_path: Path, ocr_check: bool = False) -> dict:
     """Read a single file as raw bytes, process it, and return its dictionary representation."""
     data = file_path.read_bytes()
-    result = process(data)
+    result = process(data, ocr_check=ocr_check)
     return result.model_dump()
 
 
@@ -32,6 +32,11 @@ def main() -> int:
     parser.add_argument("path", type=str, help="Path to input document file or directory")
     parser.add_argument("--out", type=str, default=None, help="Output directory for batch mode")
     parser.add_argument("--no-cache", action="store_true", help="Bypass response disk caching")
+    parser.add_argument(
+        "--ocr-check",
+        action="store_true",
+        help="Enable EasyOCR text grounding for vision route scans",
+    )
     args = parser.parse_args()
 
     if args.no_cache:
@@ -43,7 +48,7 @@ def main() -> int:
         return 1
 
     if target.is_file():
-        res_dict = _process_file(target)
+        res_dict = _process_file(target, ocr_check=args.ocr_check)
         sys.stdout.write(json.dumps(res_dict, indent=2) + "\n")
         return 0
 
@@ -58,7 +63,7 @@ def main() -> int:
         logger.info("Found %d files to process in %s", len(files), target)
         for p in files:
             logger.info("Processing %s", p.name)
-            res_dict = _process_file(p)
+            res_dict = _process_file(p, ocr_check=args.ocr_check)
             out_file = out_dir / f"{p.stem}.json"
             out_file.write_text(json.dumps(res_dict, indent=2), encoding="utf-8")
         logger.info("Completed extraction for %d files into %s", len(files), out_dir)

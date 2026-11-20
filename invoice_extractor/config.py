@@ -55,3 +55,9 @@ PDF_MAGIC: bytes = b"%PDF-"
 
 # Cache directory location for raw Gemini responses
 CACHE_DIR: Path = Path(".cache")
+
+# Minimum word confidence threshold to retain text detection from EasyOCR
+OCR_CONFIDENCE_THRESHOLD: float = 0.4
+
+# Minimum RapidFuzz partial_ratio for fuzzy grounding of invoice numbers in scans
+OCR_FUZZY_RATIO: float = 90.0

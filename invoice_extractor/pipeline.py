@@ -35,6 +35,8 @@ def _calculate_cost(usage: Usage) -> float:
 
 def _attempt_extraction(
     doc: Document,
+    source_text: str | None,
+    is_ocr: bool,
     feedback: str | None = None,
 ) -> tuple[Invoice | None, list[Issue], Usage]:
     """Perform one extraction attempt and validate returned structured data."""
@@ -44,20 +46,32 @@ def _attempt_extraction(
     except ValidationError as err:
         return None, [Issue(IssueCode.SCHEMA_INVALID, f"JSON validation error: {err}")], usage
 
-    source_text = doc.text if doc.route == "text_layer" else None
-    issues = checks.run_checks(invoice, source_text)
+    issues = checks.run_checks(invoice, source_text, is_ocr=is_ocr)
     return invoice, issues, usage
 
 
-def process(data: bytes) -> Result:
+def process(data: bytes, ocr_check: bool = False) -> Result:
     """Process raw document bytes end-to-end and produce a validated Result."""
     try:
         doc = ingest.load(data)
     except Unreadable as err:
         return Result.unavailable(err.reason, err.detail, model=GEMINI_MODEL)
 
+    source_text: str | None = None
+    is_ocr = False
+    if doc.route == "text_layer":
+        source_text = doc.text
+    elif doc.route == "vision" and ocr_check:
+        try:
+            from invoice_extractor import ocr
+
+            source_text = ocr.read_text(doc.images)
+            is_ocr = True
+        except Exception as err:
+            logger.warning("OCR cross-check failed to extract text: %s", err)
+
     try:
-        inv1, issues1, usage1 = _attempt_extraction(doc)
+        inv1, issues1, usage1 = _attempt_extraction(doc, source_text, is_ocr)
     except ExtractionFailed as err:
         return Result.unavailable(
             UnavailableReason.API_FAILURE,
@@ -74,7 +88,7 @@ def process(data: bytes) -> Result:
     if issues1:
         feedback = prompts.feedback_message(issues1)
         try:
-            inv2, issues2, usage2 = _attempt_extraction(doc, feedback)
+            inv2, issues2, usage2 = _attempt_extraction(doc, source_text, is_ocr, feedback)
             total_usage = usage1 + usage2
             attempts = 2
             # Keep the attempt with fewer issues; first attempt wins ties

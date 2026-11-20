@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice Extraction Pipeline</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success-bg: #ecfdf5;
+      --success-text: #065f46;
+      --success-border: #a7f3d0;
+      --warning-bg: #fffbeb;
+      --warning-text: #92400e;
+      --warning-border: #fde68a;
+      --error-bg: #fef2f2;
+      --error-text: #991b1b;
+      --error-border: #fecaca;
+      --badge-bg: #f1f5f9;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    header {
+      max-width: 1400px;
+      margin: 0 auto 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+    .subtitle { font-size: 0.875rem; color: var(--text-muted); }
+
+    .upload-section {
+      max-width: 1400px;
+      margin: 0 auto 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      background: #fafafa;
+      transition: all 0.2s;
+    }
+    .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+    .drop-zone p { margin-top: 8px; color: var(--text-muted); font-size: 0.9rem; }
+
+    .controls-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .options {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: 0.875rem;
+    }
+    .options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+    .btn:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .split-layout {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      min-height: 600px;
+    }
+    @media (max-width: 900px) {
+      .split-layout { grid-template-columns: 1fr; }
+    }
+
+    .pane {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
+    .pane-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Viewer styles */
+    .preview-container {
+      flex: 1;
+      min-height: 500px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f5f9;
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+    }
+    .preview-container iframe,
+    .preview-container embed {
+      width: 100%;
+      height: 100%;
+      min-height: 550px;
+      border: none;
+    }
+    .preview-container img {
+      max-width: 100%;
+      max-height: 550px;
+      object-fit: contain;
+    }
+    .placeholder-text {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      text-align: center;
+      padding: 20px;
+    }
+
+    /* Results styles */
+    .banner {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .banner.pass { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+    .banner.review { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+    .banner.error { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); }
+
+    .review-reasons {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .reason-chip {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: var(--warning-text);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: monospace;
+    }
+
+    .fields-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .field-card {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 6px;
+    }
+    .field-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .field-value {
+      font-size: 1rem;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .meta-card {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+    .meta-item span { display: block; }
+    .meta-title { color: var(--text-muted); font-size: 0.75rem; }
+    .meta-val { font-weight: 600; }
+
+    details {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: #f8fafc;
+    }
+    summary { font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+    pre {
+      margin-top: 10px;
+      padding: 10px;
+      background: #1e293b;
+      color: #f8fafc;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      max-height: 250px;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #ffffff;
+      border-bottom-color: transparent;
+      border-radius: 50%;
+      display: inline-block;
+      animation: rotation 1s linear infinite;
+    }
+    @keyframes rotation {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>Invoice Extraction Pipeline</h1>
+      <div class="subtitle">FastAPI Service &amp; Visual Grounding Inspector</div>
+    </div>
+  </header>
+
+  <section class="upload-section">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" style="display: none;" accept=".pdf,.png,.jpg,.jpeg">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <p id="dropText">Click or drag &amp; drop an invoice (PDF, JPG, PNG) to inspect</p>
+      <div id="fileInfo" style="margin-top: 6px; font-weight: 600; display: none;"></div>
+    </div>
+
+    <div class="controls-row">
+      <div class="options">
+        <label>
+          <input type="checkbox" id="noCacheCheckbox">
+          Bypass Cache
+        </label>
+        <label>
+          <input type="checkbox" id="ocrCheckCheckbox">
+          Run OCR Check (Phase 2)
+        </label>
+      </div>
+      <button class="btn" id="extractBtn" disabled>
+        <span id="btnSpinner" class="spinner" style="display: none;"></span>
+        <span id="btnText">Extract Data</span>
+      </button>
+    </div>
+  </section>
+
+  <main class="split-layout">
+    <!-- Left Pane: Document Preview -->
+    <div class="pane">
+      <div class="pane-title">
+        <span>Document Preview</span>
+        <a id="openNewTabLink" href="#" target="_blank" style="display: none; font-size: 0.8rem; color: var(--primary);">Open Original &nearr;</a>
+      </div>
+      <div class="preview-container" id="previewContainer">
+        <div class="placeholder-text" id="previewPlaceholder">
+          Select or drop a file to view preview
+        </div>
+        <iframe id="pdfFrame" style="display: none;"></iframe>
+        <img id="imagePreview" alt="Document Preview" style="display: none;">
+      </div>
+    </div>
+
+    <!-- Right Pane: Extracted Data -->
+    <div class="pane">
+      <div class="pane-title">
+        <span>Extraction Results</span>
+        <span id="timingBadge" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+      </div>
+
+      <div id="resultsPlaceholder" class="placeholder-text" style="margin: auto;">
+        No data extracted yet. Upload a document and click "Extract Data".
+      </div>
+
+      <div id="resultsContent" style="display: none; overflow-y: auto;">
+        <!-- Banner -->
+        <div id="statusBanner" class="banner pass">
+          <span id="bannerText">PASS - Ready for Processing</span>
+          <span id="bannerBadge"></span>
+        </div>
+
+        <!-- Review Reasons -->
+        <div id="reviewReasons" class="review-reasons" style="display: none;"></div>
+
+        <!-- Key Header Fields -->
+        <div class="fields-grid">
+          <div class="field-card">
+            <div class="field-label">Document Type</div>
+            <div class="field-value" id="resDocType">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Is Invoice</div>
+            <div class="field-value" id="resIsInvoice">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Vendor</div>
+            <div class="field-value" id="resVendor">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Invoice Number</div>
+            <div class="field-value" id="resInvNumber">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Invoice Date</div>
+            <div class="field-value" id="resInvDate">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Currency</div>
+            <div class="field-value" id="resCurrency">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Tax Total</div>
+            <div class="field-value" id="resTaxTotal">-</div>
+          </div>
+          <div class="field-card">
+            <div class="field-label">Grand Total</div>
+            <div class="field-value" id="resTotal" style="color: var(--primary);">-</div>
+          </div>
+        </div>
+
+        <!-- Line Items Table -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="num" style="width: 80px;">Qty</th>
+                <th class="num" style="width: 120px;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="lineItemsBody">
+              <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">No line items</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Execution Meta & Accounting -->
+        <div class="meta-card" id="metaCard">
+          <div class="meta-item">
+            <span class="meta-title">Route</span>
+            <span class="meta-val" id="metaRoute">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-title">Model</span>
+            <span class="meta-val" id="metaModel">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-title">Attempts</span>
+            <span class="meta-val" id="metaAttempts">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-title">Input Tokens</span>
+            <span class="meta-val" id="metaInputTokens">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-title">Output Tokens</span>
+            <span class="meta-val" id="metaOutputTokens">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-title">Estimated Cost</span>
+            <span class="meta-val" id="metaCost">-</span>
+          </div>
+        </div>
+
+        <!-- Raw JSON output -->
+        <details>
+          <summary>View Raw JSON</summary>
+          <pre><code id="jsonPre"></code></pre>
+        </details>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let selectedFile = null;
+    let previewUrl = null;
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const extractBtn = document.getElementById('extractBtn');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const btnText = document.getElementById('btnText');
+    const noCacheCheckbox = document.getElementById('noCacheCheckbox');
+    const ocrCheckCheckbox = document.getElementById('ocrCheckCheckbox');
+
+    const previewPlaceholder = document.getElementById('previewPlaceholder');
+    const pdfFrame = document.getElementById('pdfFrame');
+    const imagePreview = document.getElementById('imagePreview');
+    const openNewTabLink = document.getElementById('openNewTabLink');
+
+    const resultsPlaceholder = document.getElementById('resultsPlaceholder');
+    const resultsContent = document.getElementById('resultsContent');
+    const timingBadge = document.getElementById('timingBadge');
+
+    // Click drop zone to select file
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // Drag-and-drop handling
+    ['dragenter', 'dragover'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      });
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files.length > 0) {
+        handleFileSelection(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        handleFileSelection(fileInput.files[0]);
+      }
+    });
+
+    function handleFileSelection(file) {
+      selectedFile = file;
+      fileInfo.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      fileInfo.style.display = 'block';
+      extractBtn.disabled = false;
+
+      // Update preview
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      previewUrl = URL.createObjectURL(file);
+      openNewTabLink.href = previewUrl;
+      openNewTabLink.style.display = 'inline';
+
+      previewPlaceholder.style.display = 'none';
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        imagePreview.style.display = 'none';
+        pdfFrame.src = previewUrl;
+        pdfFrame.style.display = 'block';
+      } else {
+        pdfFrame.style.display = 'none';
+        imagePreview.src = previewUrl;
+        imagePreview.style.display = 'block';
+      }
+    }
+
+    extractBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      extractBtn.disabled = true;
+      btnSpinner.style.display = 'inline-block';
+      btnText.textContent = 'Extracting...';
+      timingBadge.textContent = 'Running pipeline...';
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const params = new URLSearchParams({
+        no_cache: noCacheCheckbox.checked,
+        ocr_check: ocrCheckCheckbox.checked
+      });
+
+      const startTime = performance.now();
+
+      try {
+        const response = await fetch(`/extract?${params.toString()}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server returned HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
+        timingBadge.textContent = `${durationSec}s`;
+        renderResults(data);
+      } catch (err) {
+        timingBadge.textContent = 'Failed';
+        alert(`Extraction failed: ${err.message}`);
+      } finally {
+        extractBtn.disabled = false;
+        btnSpinner.style.display = 'none';
+        btnText.textContent = 'Extract Data';
+      }
+    });
+
+    function renderResults(res) {
+      resultsPlaceholder.style.display = 'none';
+      resultsContent.style.display = 'block';
+
+      // Status Banner
+      const banner = document.getElementById('statusBanner');
+      const bannerText = document.getElementById('bannerText');
+      const reasonsDiv = document.getElementById('reviewReasons');
+      reasonsDiv.innerHTML = '';
+
+      if (res.unavailable_reason) {
+        banner.className = 'banner error';
+        bannerText.textContent = `UNAVAILABLE: ${res.unavailable_reason}`;
+      } else if (res.needs_review) {
+        banner.className = 'banner review';
+        bannerText.textContent = 'NEEDS REVIEW (Flagged)';
+      } else {
+        banner.className = 'banner pass';
+        bannerText.textContent = 'PASS - Validation Clean';
+      }
+
+      if (res.review_reasons && res.review_reasons.length > 0) {
+        reasonsDiv.style.display = 'flex';
+        res.review_reasons.forEach(r => {
+          const chip = document.createElement('div');
+          chip.className = 'reason-chip';
+          chip.textContent = r;
+          reasonsDiv.appendChild(chip);
+        });
+      } else {
+        reasonsDiv.style.display = 'none';
+      }
+
+      // Fields
+      document.getElementById('resDocType').textContent = res.document_type || '-';
+      document.getElementById('resIsInvoice').textContent = res.is_invoice === null ? 'null' : (res.is_invoice ? 'true' : 'false');
+      document.getElementById('resVendor').textContent = res.vendor || '-';
+      document.getElementById('resInvNumber').textContent = res.invoice_number || '-';
+      document.getElementById('resInvDate').textContent = res.invoice_date || '-';
+      document.getElementById('resCurrency').textContent = res.currency || '-';
+      document.getElementById('resTaxTotal').textContent = res.tax_total !== null && res.tax_total !== undefined ? res.tax_total.toFixed(2) : '-';
+      document.getElementById('resTotal').textContent = res.total !== null && res.total !== undefined ? res.total.toFixed(2) : '-';
+
+      // Line Items
+      const tbody = document.getElementById('lineItemsBody');
+      tbody.innerHTML = '';
+      if (res.line_items && res.line_items.length > 0) {
+        res.line_items.forEach(item => {
+          const tr = document.createElement('tr');
+          const tdDesc = document.createElement('td');
+          tdDesc.textContent = item.description;
+          const tdQty = document.createElement('td');
+          tdQty.className = 'num';
+          tdQty.textContent = item.quantity !== null && item.quantity !== undefined ? item.quantity : '-';
+          const tdAmt = document.createElement('td');
+          tdAmt.className = 'num';
+          tdAmt.textContent = item.amount !== null && item.amount !== undefined ? item.amount.toFixed(2) : '-';
+          tr.appendChild(tdDesc);
+          tr.appendChild(tdQty);
+          tr.appendChild(tdAmt);
+          tbody.appendChild(tr);
+        });
+      } else {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">No line items</td></tr>';
+      }
+
+      // Metadata
+      if (res.meta) {
+        document.getElementById('metaRoute').textContent = res.meta.route;
+        document.getElementById('metaModel').textContent = res.meta.model;
+        document.getElementById('metaAttempts').textContent = res.meta.attempts;
+        document.getElementById('metaInputTokens').textContent = res.meta.input_tokens.toLocaleString();
+        document.getElementById('metaOutputTokens').textContent = res.meta.output_tokens.toLocaleString();
+        document.getElementById('metaCost').textContent = `$${res.meta.cost_usd.toFixed(6)}`;
+      }
+
+      // Raw JSON
+      document.getElementById('jsonPre').textContent = JSON.stringify(res, null, 2);
+    }
+  </script>
+</body>
+</html>
