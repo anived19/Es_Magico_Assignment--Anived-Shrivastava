@@ -1,24 +1,43 @@
 {
-  "document_type": null,
-  "vendor": null,
-  "invoice_number": null,
-  "invoice_date": null,
-  "currency": null,
-  "line_items": null,
-  "tax_total": null,
-  "total": null,
-  "needs_review": true,
-  "review_reasons": [
-    "API_FAILURE: Gemini API invocation failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\\nPlease retry in 23h13m41.984405972s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://aistudio.google.com/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'description': 'Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.', 'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'model': 'gemini-3.6-flash', 'location': 'global'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '83621s'}]}}"
+  "document_type": "INVOICE",
+  "vendor": "Greenleaf Catering Co",
+  "invoice_number": "GC/0204",
+  "invoice_date": "2026-02-07",
+  "currency": "INR",
+  "line_items": [
+    {
+      "description": "Vegetarian buffet lunch, per head",
+      "quantity": 120.0,
+      "amount": 57600.0
+    },
+    {
+      "description": "Live pasta counter (event)",
+      "quantity": 1.0,
+      "amount": 18000.0
+    },
+    {
+      "description": "Soft drinks and mocktails, per head",
+      "quantity": 120.0,
+      "amount": 10200.0
+    },
+    {
+      "description": "Service charge (10%)",
+      "quantity": null,
+      "amount": 8580.0
+    }
   ],
-  "unavailable_reason": "API_FAILURE",
+  "tax_total": 4719.0,
+  "total": 99099.0,
+  "needs_review": false,
+  "review_reasons": [],
+  "unavailable_reason": null,
   "meta": {
     "route": "text_layer",
     "model": "gemini-3.5-flash",
-    "attempts": 0,
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "cost_usd": 0.0
+    "attempts": 1,
+    "input_tokens": 971,
+    "output_tokens": 789,
+    "cost_usd": 0.003687
   },
-  "is_invoice": null
+  "is_invoice": true
 }

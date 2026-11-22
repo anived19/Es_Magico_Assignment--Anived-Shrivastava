@@ -1,5 +1,5 @@
 {
-  "document_type": null,
+  "document_type": "PERSONAL_OR_OTHER",
   "vendor": null,
   "invoice_number": null,
   "invoice_date": null,
@@ -7,18 +7,16 @@
   "line_items": null,
   "tax_total": null,
   "total": null,
-  "needs_review": true,
-  "review_reasons": [
-    "API_FAILURE: Gemini API invocation failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\\nPlease retry in 23h13m36.160110798s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://aistudio.google.com/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'description': 'Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.', 'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.6-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '83616s'}]}}"
-  ],
-  "unavailable_reason": "API_FAILURE",
+  "needs_review": false,
+  "review_reasons": [],
+  "unavailable_reason": null,
   "meta": {
     "route": "text_layer",
     "model": "gemini-3.5-flash",
-    "attempts": 0,
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "cost_usd": 0.0
+    "attempts": 1,
+    "input_tokens": 905,
+    "output_tokens": 174,
+    "cost_usd": 0.001331
   },
-  "is_invoice": null
+  "is_invoice": false
 }
