@@ -114,3 +114,17 @@ def test_grounding_passes_and_fails() -> None:
     inv.line_items = [LineItem(description="Item", amount=99999.0)]
     issues = checks.run_checks(inv, source_text=source_text)
     assert any(i.code == IssueCode.NOT_IN_SOURCE_TEXT and "99999.00" in i.detail for i in issues)
+
+    # European number format grounding (e.g. 9.900,80)
+    eu_source = "Rechnung RE-2026-0317 Gesamtbetrag € 9.900,80"
+    eu_inv = Invoice(
+        document_type=DocumentType.INVOICE,
+        vendor="TechNova",
+        invoice_number="RE-2026-0317",
+        invoice_date="2026-04-28",
+        currency="EUR",
+        total=9900.8,
+        line_items=[LineItem(description="Dev", amount=9900.8)],
+    )
+    eu_issues = checks.run_checks(eu_inv, source_text=eu_source)
+    assert not any(i.code == IssueCode.NOT_IN_SOURCE_TEXT for i in eu_issues)

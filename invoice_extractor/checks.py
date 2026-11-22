@@ -117,6 +117,25 @@ def _check_totals(invoice: Invoice) -> Issue | None:
     return None
 
 
+def _matches_amount(token: str, expected: float) -> bool:
+    """Check if a numeric token matches expected amount in Anglo/Indian or European format."""
+    # Interpretation 1: Standard/Anglo/Indian (comma as thousands, dot as decimal)
+    try:
+        val1 = float(token.replace(",", ""))
+        if abs(val1 - expected) <= 0.01:
+            return True
+    except ValueError:
+        pass
+    # Interpretation 2: European format (dot as thousands, comma as decimal)
+    try:
+        val2 = float(token.replace(".", "").replace(",", "."))
+        if abs(val2 - expected) <= 0.01:
+            return True
+    except ValueError:
+        pass
+    return False
+
+
 def _check_grounding(
     invoice: Invoice,
     source_text: str | None,
@@ -143,17 +162,8 @@ def _check_grounding(
             )
 
     if invoice.total is not None:
-        raw_tokens = re.findall(r"(?:\d[\d,]*)(?:\.\d+)?", source_text)
-        found = False
-        for tok in raw_tokens:
-            try:
-                num = float(tok.replace(",", ""))
-                if abs(num - invoice.total) <= 0.01:
-                    found = True
-                    break
-            except ValueError:
-                continue
-        if not found:
+        raw_tokens = re.findall(r"(?:\d[\d.,]*\d|\d+)", source_text)
+        if not any(_matches_amount(tok, invoice.total) for tok in raw_tokens):
             issues.append(
                 Issue(
                     IssueCode.NOT_IN_SOURCE_TEXT,
