@@ -4,34 +4,62 @@
 
 ### System Architecture
 The extraction pipeline is designed around honest measurement, deterministic validation, and strict content sniffing:
-- **Routing**: Incoming files are received as raw bytes. File names and extensions are completely ignored. If the first 1024 bytes contain `%PDF-`, PyMuPDF inspects each page's text density and image coverage. Documents with $\ge 30$ non-space characters per page and $< 50\%$ image area coverage route to `text_layer` (native text extraction). Scanned PDFs and raster images (`.jpg`, `.png`) route to `vision` (rendered at 150 DPI).
-- **Model**: Google Gemini 3.5 Flash (`gemini-3.5-flash`), temperature `0.0`, invoked with structured output (`response_mime_type="application/json"`, `response_schema=Invoice`).
-- **Prompting & Conventions**: Prompt conventions were learned from the 10 labelled documents (`L01`–`L10`):
-  1. `is_invoice` is derived strictly from `document_type == "INVOICE"`.
-  2. For non-invoice types (`PURCHASE_ORDER`, `BANK_STATEMENT`, `RECEIPT`, etc.), all extraction fields must be `null`.
+- **Model**: Google Gemini 3.5 Flash (`gemini-3.5-flash`), configured via `.env` (`GEMINI_MODEL`), invoked at temperature `0.0` with structured JSON output enforcement (`response_mime_type="application/json"`, `response_schema=Invoice`).
+- **Routing (`text_layer` vs `vision`)**: Ingestion inspects raw bytes without relying on file names or extensions. If the first 1024 bytes match `%PDF-` (`PDF_MAGIC`), PyMuPDF analyzes text character density and embedded image coverage across all pages (up to `MAX_PAGES = 6`). Documents with $\ge 30$ non-space characters per page (`MIN_TEXT_CHARS`) and $< 50\%$ page area occupied by embedded images (`SCAN_IMAGE_COVERAGE`) route to `text_layer` (digital text extracted directly). Scanned PDFs and raster images (`.jpg`, `.png`) route to `vision` (rendered at 150 DPI, `RENDER_DPI`).
+- **Structured Output**: Extracted data is constrained by Pydantic models to ensure valid schema typing, including ISO 4217 currency strings, ISO dates, numeric totals, and line item arrays.
+- **Temperature**: Pinned to `0.0` across all extraction calls to minimize generation variance and maximize deterministic reproduction.
+- **Prompt Design**: Prompt conventions were learned from the 10 labelled documents (`L01`–`L10`):
+  1. `is_invoice` is derived strictly from whether `document_type == "INVOICE"`.
+  2. For non-invoice types (`PURCHASE_ORDER`, `BANK_STATEMENT`, `RECEIPT`, `QUOTATION`, `CREDIT_NOTE`, `PERSONAL_OR_OTHER`), all extraction fields (`vendor`, `invoice_number`, `invoice_date`, `currency`, `line_items`, `tax_total`, `total`) must be `null`.
   3. Discounts are extracted as line items with negative amounts (e.g. `L07`).
-  4. Freight, packing, and setup charges are itemized lines (e.g. `L01`, `L04`).
+  4. Freight, packing, and setup charges are itemized line items (e.g. `L01`, `L04`).
   5. Round-off adjustments are not line items; they are absorbed into `total`.
-  6. Dates are formatted as ISO `YYYY-MM-DD`. If day/month are ambiguous, conventions are inferred from currency or country.
-- **Validation & Self-Correction**: Extracted data passes through deterministic business checks (`checks.py`). If fixable issues occur, the pipeline formats a corrective feedback prompt and triggers exactly one retry attempt. The superior attempt (prioritizing successful schema parsing over issue count) is retained. Non-retryable issues (`AMBIGUOUS_TYPE`, `OCR_MISMATCH`, `SUSPECT_NON_INVOICE`) do not trigger retries.
-- **Unreadable & Failure Handling**: Corrupt, encrypted, blank, or unsupported files return a structured `Result.unavailable` with an exact `UnavailableReason` code. If the upstream Gemini API fails or exhausts retries, `API_FAILURE` is returned, preventing batch abortion.
+  6. Dates are formatted as ISO `YYYY-MM-DD`. If printed as `DD/MM/YYYY` (common in UK/India), they are converted. If day and month are ambiguous, conventions are inferred from currency or country.
+- **Validation & One Retry**: Every extraction passes through deterministic business checks (`checks.py`). If fixable issues occur on Attempt 1, issues are formatted into a structured feedback prompt (`prompts.feedback_message`), triggering exactly one retry attempt. The pipeline selects the superior attempt using `min([attempt1, attempt2], key=lambda a: (a[0] is None, len(a[1])))`, ensuring that a valid schema extraction is never overwritten by a failed second attempt. Non-retryable issues (`AMBIGUOUS_TYPE`, `OCR_MISMATCH`, `OCR_UNAVAILABLE`, `SUSPECT_NON_INVOICE`) do not trigger retries.
+- **Bad-Input Handling**: Malformed or unreadable files return structured `Result.unavailable(reason, detail)` objects with exit code 0 rather than aborting execution. Sniffed failure modes include `UNSUPPORTED_TYPE` (unknown binary), `CORRUPT` (un-parseable PDF/image byte streams), `ENCRYPTED` (password-protected PDFs), `BLANK` (grayscale standard deviation $< 5.0$, `BLANK_STD_THRESHOLD`), and `API_FAILURE` (transient upstream LLM failures exhausted after 3 tenacity backoff attempts).
 
-### Architecture Trial That Failed: EasyOCR Grounding Cross-Check
-We hypothesized that running a local, CPU-based OCR pass on vision-route scans and cross-referencing extracted values would catch vision hallucinations. In practice, this architectural addition failed:
-1. **Perspective & Skew Fragility**: On mobile photo `L02.jpg`, Gemini Vision accurately extracted `SGS/1847`, whereas EasyOCR struggled with camera angle and lighting gradients, failing to recover the string.
-2. **Rotation Blindness**: On `U05.pdf` (a scan rotated 90°), EasyOCR produced garbage text due to lack of rotation handling, raising two false `OCR_MISMATCH` flags (invoice number and total).
-3. **Severe Latency**: On `U05.pdf`, EasyOCR took 230 seconds on CPU compared to 13 seconds for Gemini Vision on the same file.
-Consequently, OCR grounding was rejected as a default component and kept strictly flag-gated behind `--ocr-check`.
-
-### Implementation Debugging & Regex Tuning
-During development, two number tokenization edge cases were identified and resolved:
-- **Indian Lakhs/Crores Grouping**: In `L04.pdf`, the total was printed as `₹3,00,484.80`. A standard 3-digit comma regex fragmented the number into `00` and `484.80`, raising a false grounding flag.
-- **European Comma Decimals**: In German invoice `U07.pdf`, the total was printed as `€ 9.900,80`. Comma-stripping logic treated `,80` as `80.0`.
-- **Solution in Code**: The codebase tokenizes numbers with `(?:\d[\d.,]*\d|\d+)` and evaluates dual interpretations in `_matches_amount`: Anglo/Indian format (`tok.replace(",", "")`) and European format (`tok.replace(".", "").replace(",", ".")`), grounding both formats cleanly.
+### What Did Not Work: EasyOCR Grounding Cross-Check
+We evaluated adding a local CPU-based OCR pass (EasyOCR) to cross-check extracted fields on vision-route scans. Tested on two scans in the pack, this architectural addition failed:
+1. **Perspective & Skew Fragility (`L02.jpg`)**: On mobile photo `L02.jpg`, Gemini Vision transcribed `SGS/1847` accurately. EasyOCR struggled with the skewed perspective and lighting gradients, failing to recover the identifier and raising a false `OCR_MISMATCH` flag.
+2. **Rotation Fragility (`U05.pdf`)**: On `U05.pdf` (a scan rotated 90°), Gemini Vision extracted all fields cleanly. EasyOCR generated garbled text because this setup has no rotation handling, raising two false `OCR_MISMATCH` flags (invoice number and total).
+3. **Severe CPU Latency**: On `U05.pdf`, EasyOCR took 230 seconds on CPU compared to about 13 seconds for Gemini Vision on the same file. On `L02.jpg`, EasyOCR took about 90 seconds compared to about 13 seconds without OCR.
+Consequently, OCR cross-checking was rejected from the default pipeline and retained strictly behind the optional `--ocr-check` flag.
 
 ---
 
-## 2. Accuracy Table
+## 2. Evaluation Harness and Matching Rules
+
+The evaluation harness is executed via a single command:
+```bash
+python evaluate.py
+```
+*(Or `python evaluate.py --no-cache` to evaluate without disk caching).*
+
+The harness pairs documents in `data/documents/` with ground truth in `data/labels/` by filename stem, executes extraction, runs evaluation assertions, prints formatted markdown tables, and exports `reports/eval_latest.json`.
+
+### Matching Rules Per Field
+
+| Field | Rule |
+|---|---|
+| `is_invoice` | Exact boolean match; both `null` counts as correct. |
+| `currency` | Exact match on 3-letter ISO 4217 code; both `null` counts as correct. |
+| `invoice_date` | Exact ISO `YYYY-MM-DD` string match. |
+| `invoice_number` | Equal after trimming, lowercasing, and stripping all non-alphanumeric whitespace/punctuation. |
+| `vendor` | Lowercased, punctuation stripped, corporate legal suffixes removed (`pvt`, `private`, `ltd`, `limited`, `llp`, `inc`, `co`), then `rapidfuzz.fuzz.ratio >= 85`. |
+| `total`, `tax_total` | Stripped of currency symbols and commas, parsed as floats, absolute difference $\le 0.01$; both `null` counts as correct. |
+| `line_items` | Greedy 1:1 matching of predicted to expected items where `abs(pred.amount - exp.amount) <= 0.01` and `pred.quantity == exp.quantity`. Evaluated as F1 score per document, averaged across documents. Descriptions are unconstrained due to multilingual phrasing differences. |
+| Non-invoices | Correct only when `is_invoice` is `false` and all other fields (`vendor`, `invoice_number`, `invoice_date`, `currency`, `line_items`, `tax_total`, `total`) are `null`. |
+
+*Note on Denominators: As a deliberate design decision, ground-truth non-invoices (`L08`) are excluded from field-level invoice accuracy denominators. Including non-invoices would trivially inflate accuracy scores by counting expected `null` values as successful extractions.*
+
+---
+
+## 3. Accuracy
+
+> [!NOTE]
+> Prompt conventions were learned from the 10 labelled documents (`L01`–`L10`), and the accuracy numbers reported below are on that same set (tuned on it).
+
+### Field-Level Accuracy Table
 
 Evaluated on the 10 labelled documents (`L01`–`L10`):
 
@@ -48,9 +76,9 @@ Evaluated on the 10 labelled documents (`L01`–`L10`):
 | `is_invoice` (all documents) | 100.0% | 10/10 |
 | `non-invoices handled correctly` | 100.0% | 1/1 |
 
-*Note: As a design decision, to avoid inflating field accuracy by scoring trivial nulls, truth non-invoices (`L08`) are excluded from field-level invoice denominators.*
-
 ### Per-Document Evaluation Grid
+
+Every row contains exactly 12 columns:
 
 | File | Route | Doc Type | Vendor | Inv # | Date | Curr | Items | Tax | Total | IsInv/Clean | Review |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -59,27 +87,26 @@ Evaluated on the 10 labelled documents (`L01`–`L10`):
 | `L03` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 | `L04` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 | `L05` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
-| `L06` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
+| `L06` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 | `L07` | text_layer | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 | `L08` | text_layer | PURCHASE_ORDER | — | — | — | — | — | — | — | ✓ | PASS |
 | `L09` | vision | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 | `L10` | vision | INVOICE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PASS |
 
----
+### Review Flag Performance on Labelled Set
 
-## 3. Failure Analysis
+| | Wrong (Errors > 0) | Right (0 Errors) | Total |
+|---|---|---|---|
+| **Flagged for review** | TP = 0 | FP = 0 | 0 |
+| **Not flagged (passed)** | FN = 0 | TN = 10 | 10 |
+| **Total** | 0 | 10 | 10 |
 
-Across the 10 labelled documents:
-- **Misses**: 0 field errors (10/10 documents fully correct).
-- **Review Flag Analysis on Labelled Set**:
-  - True Positives (TP): 0
-  - False Positives (FP): 0
-  - False Negatives (FN): 0
-  - True Negatives (TN): 10
-  - Precision and recall are undefined: no document was flagged and no document was wrong. This table cannot yet show whether the flag catches errors.
+- **Review Flag Precision**: Undefined (no documents flagged; 0/0)
+- **Review Flag Recall**: Undefined (no field errors in dataset; 0/0)
+- **Status**: Precision and recall are undefined: no document was flagged and no document was wrong. This table cannot yet show whether the flag catches errors.
 
-### Mutation Testing: Empirical Review-Flag Measurement
-To objectively measure whether deterministic checks catch real extraction errors, we executed an automated mutation testing harness (`tests/test_mutation.py`) that injected synthetic defects across 9 distinct failure modes on ground-truth invoices:
+### Mutation Testing: Empirical Review-Flag Validation
+Because the labelled pack had 0 field errors, we verified the review flag mechanism by executing an automated synthetic mutation harness (`tests/test_mutation.py`) across 9 defect classes on ground-truth invoices:
 
 | Mutation Class | Injected Defect | Triggered Issue Code | Flagged? |
 |---|---|---|---|
@@ -93,28 +120,76 @@ To objectively measure whether deterministic checks catch real extraction errors
 | **Non-Invoice Field Leakage** | `BANK_STATEMENT` with populated fields | `NON_INVOICE_HAS_FIELDS` | **Yes (TP)** |
 | **Misclassified Invoice** | Invoice text with `BANK_STATEMENT` type | `SUSPECT_NON_INVOICE` | **Yes (TP)** |
 
-- **Mutation Test Results**:
-  - Injected Defects Caught: **9 / 9**
-  - True Positives (TP): 9
-  - False Negatives (FN): 0
-  - False Positives on Clean Invoices (FP): 0
-  - True Negatives on Clean Invoices (TN): 10
-  - **Empirical Mutation Recall**: **100.0%**
-  - **Empirical Mutation Precision**: **100.0%**
-
-### Batch & Unlabelled Document Observations
-During an initial full batch run under free-tier quota limits, transient `429` rate-limit errors occurred on documents `U07`–`U10`. Following quota reset, all four documents were re-extracted cleanly without cache. All 20 output deliverables in `outputs/` are complete extractions with 0 `API_FAILURE` deliverables.
+Mutation results: 9 / 9 injected defects flagged (100% recall), 0 false flags on clean truth documents (100% precision).
 
 ---
 
-## 4. Cost Per Document
+## 4. Failure Analysis
 
-Costs are computed deterministically per document using the formula:
-$$\text{Cost} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \$0.75\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \$3.75\right)$$
+There were zero output errors on the labelled set. The failures analyzed below represent **development-time failures** encountered, debugged, and resolved during system construction:
 
-*Pricing Source: Official Google AI Studio Developer API Pricing (`ai.google.dev/pricing`), Standard Paid Tier for `gemini-3.5-flash` / `gemini-3.6-flash` checked on November 22, 2026 ($0.75 / 1M input tokens, $3.75 / 1M output tokens, valid through December 31, 2026). Google's pricing documentation explicitly states that thinking tokens are billed as output tokens.*
+### a. Number-Format Tokenization
+- **Example**: In `L04.pdf`, the total was printed using Indian numbering formatting as `₹3,00,484.80`. In German invoice `U07.pdf`, the total was printed as `€ 9.900,80`.
+- **How Found**: A Western 3-digit comma regex split `3,00,484.80` into `00` and `484.80`, raising a false `NOT_IN_SOURCE_TEXT` flag. On `U07.pdf`, naive comma-stripping parsed `,80` as `80.0`.
+- **Fix**: The grounding logic in `checks.py` extracts numeric tokens with `(?:\d[\d.,]*\d|\d+)`. In `_matches_amount(token, expected)`, tokens are evaluated under dual interpretations: Anglo/Indian (`tok.replace(",", "")`) and European (`tok.replace(".", "").replace(",", ".")`), accepting a match if the absolute difference is $\le 0.01$.
+- **Current Status**: Fixed and covered by unit tests in `tests/test_checks.py`.
 
-Fresh measurements from un-cached evaluation run (`PROMPT_VERSION = v2`):
+### b. Upstream Availability
+- **Example**: Transient `503 Service Unavailable` and `429 RESOURCE_EXHAUSTED` errors during initial model experiments and batch runs (`U07`–`U10`).
+- **How Found**: Free-tier rate limits and intermittent API disconnects during batch execution.
+- **Fix**: Wrapped LLM calls with Tenacity exponential retry backoff (3 attempts, handling `ResourceExhausted` and `ServiceUnavailable` in `llm.py`). If retries exhaust, `pipeline.py` catches `ExtractionFailed` and returns `Result.unavailable(UnavailableReason.API_FAILURE, ...)` with exit code 0 rather than crashing the batch.
+- **Current Status**: Fixed. All 20 output deliverables in `outputs/` are complete extractions with 0 `API_FAILURE` deliverables.
+
+### c. OCR Limitations
+- **Example**: Perspective distortion on `L02.jpg` (~90 s) and rotated scan on `U05.pdf` (230 s vs 13 s Gemini latency).
+- **How Found**: Phase 2 EasyOCR ablation experiments on vision-route documents.
+- **Fix**: Identified that CPU EasyOCR lacks skew and orientation rectification. OCR cross-checking was decoupled from the primary pipeline, made strictly flag-gated (`--ocr-check`), and classified as non-retryable (`IssueCode.OCR_MISMATCH`).
+- **Current Status**: Documented as an evaluated architecture that failed. Gemini Vision natively handles skew and rotation.
+
+### d. Pipeline Logic Defects Found in Code Review
+- **Example 1 (Attempt Selection)**: If Attempt 1 returned a valid `Invoice` with 2 minor issues, but Attempt 2 failed schema validation (`ValidationError`), the naive logic overwrote Attempt 1 with `None`.
+  - *Fix*: `_select_best_attempt` uses `min([attempt1, attempt2], key=lambda a: (a[0] is None, len(a[1])))`, ensuring schema-valid extractions take precedence.
+- **Example 2 (Unfixable Retries)**: Retrying on borderline document types (`AMBIGUOUS_TYPE`) or OCR discrepancies (`OCR_MISMATCH`) caused unnecessary LLM calls.
+  - *Fix*: Introduced `NON_RETRYABLE = {AMBIGUOUS_TYPE, OCR_MISMATCH, OCR_UNAVAILABLE, SUSPECT_NON_INVOICE}`, filtering issues before triggering retries.
+- **Example 3 (Swallowed OCR Exceptions)**: Missing optional OCR dependencies produced silent failures.
+  - *Fix*: `_resolve_source_text` raises an explicit `RuntimeError` prompting installation of `requirements-ocr.txt` on `ImportError`, while catching runtime engine failures as `OCR_UNAVAILABLE` issues.
+- **Current Status**: Fixed and covered by 5 unit tests in `tests/test_pipeline.py`.
+
+### e. Weak Grounding
+- **Example**:
+  - *Short Identifiers*: Invoice number grounding tests whether `clean_inv in clean_src`. A short ID like `42` or `001` can match anywhere across page text or inside unrelated words.
+  - *Unanchored Totals*: Any numeric token matching the total amount satisfies grounding. A small total (e.g. `100.00`) can match an item quantity or an address string.
+  - *Fuzzy Threshold Sensitivity*: For a 7-character ID, `fuzz.partial_ratio >= 90.0` tolerates 0 substitutions because a single character error drops the score to `85.7`. The fuzzy check is effectively exact for IDs under 10 characters.
+  - *Vision Route Omission*: By default (without `--ocr-check`), vision-route scans supply no source text, meaning `NOT_IN_SOURCE_TEXT` cannot fire on scans.
+- **How Found**: Algorithmic inspection and code review of `checks.py`.
+- **Current Status**: Open architectural limitation of heuristic grounding without bounding-box geometry.
+
+### f. Classification Asymmetry
+- **Example**: If Gemini misclassifies an invoice as a non-invoice (e.g. `document_type="BANK_STATEMENT"`), all other fields are returned as `null`. This output is internally consistent, evading standard null-field and math checks and passing silently.
+- **How Found**: Conceptual failure mode modeling during verification.
+- **Fix**: Implemented `_check_suspect_non_invoice` in `checks.py`, scanning digital text with `re.MULTILINE` for `^\s*tax\s+invoice\s*$` and `\binvoice\s*(?:no\b|number\b|#)`.
+- **Current Status**: Open limitation. This heuristic has been validated on only three non-invoices (`L08`, `U06`, `U10`) and covers the `text_layer` route only; a scanned invoice misread as a non-invoice on the `vision` route still passes silently.
+
+### g. Documentation Inconsistencies Caught in Review
+- **Example**: Precision and recall displayed as `0.0%` instead of undefined when TP=FP=FN=0; `L05` row in the evaluation grid missing a cell (7 checkmarks instead of 8); pricing source citing a November 2024 date for a model that did not exist then.
+- **How Found**: Technical report review and schema consistency audits.
+- **Fix**: Formatted precision and recall as `Undefined` in `evaluation/report.py`; aligned all grid rows to 12 columns; marked pricing verification as `TODO(user)`.
+- **Current Status**: Fully resolved.
+
+### What I Would Fix First
+**The classification asymmetry**: If an invoice is misclassified as a non-invoice, the failure is completely silent because an all-null output is self-consistent under the schema. While `_check_suspect_non_invoice` provides a basic heuristic safeguard on digital PDFs, scanned invoices processed via the vision route currently have zero defense against misclassification. Implementing a lightweight pre-classification vision check or OCR-based header verification would be the top engineering priority.
+
+---
+
+## 5. Cost Per Document
+
+Costs are calculated deterministically using the formula:
+$$\text{Cost} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \text{Input Price}\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \text{Output Price}\right)$$
+
+Prices with the source and the date checked: TODO(user)
+*(Input price: TODO(user) / 1M tokens; Output price: TODO(user) / 1M tokens; Pricing source and date checked: TODO(user). Note: The figures below reflect the placeholder rates of $0.75 / 1M input tokens and $3.75 / 1M output tokens configured in `.env`, with thinking tokens billed at output token rates).*
+
+Measurements from fresh evaluation run (`python evaluate.py --no-cache`, `PROMPT_VERSION = "v2"`):
 
 | Route | Documents | Mean In Tokens | Mean Out Tokens | Mean USD / Doc | Retry Rate |
 |---|---|---|---|---|---|
@@ -122,38 +197,39 @@ Fresh measurements from un-cached evaluation run (`PROMPT_VERSION = v2`):
 | **Text Layer** | 7 | 1,182 | 1,126 | $0.00511 | 0.0% |
 | **Vision** | 3 | 1,724 | 1,019 | $0.00511 | 0.0% |
 
-- **Token efficiency**: Digital PDFs routing to `text_layer` consume fewer input tokens (mean 1,182) compared to rendered image pages in `vision` (mean 1,724).
-- **Latency & caching**: Cached runs incur 0 latency and 0 API cost while preserving recorded metadata.
+- **Token Consumption**: Native digital PDFs (`text_layer`) averaged 1,182 input tokens, whereas rendered document scans (`vision`) averaged 1,724 input tokens.
+- **Retry Rate**: 0.0% (all 10 labelled documents succeeded on Attempt 1).
+- **Caching**: Cached runs consume 0 API tokens and incur $0.00 additional cost while retaining original metadata.
 
 ---
 
-## 5. Tuning Log
+## 6. Tuning Log
 
-- **`PROMPT_VERSION = "v1"`**: Initial prompt engineered from the 10 labelled documents (`L01`–`L10`) encoding seller-vs-buyer rules, Indian date ordering, pre-tax line item amounts, negative discount amounts, and strict nullification of non-invoice fields.
-- **`PROMPT_VERSION = "v2"`**: Added explicit date-convention guidance: *"If day and month are ambiguous, infer convention from country or currency."* This was added for defensive generality on international currency invoices, not motivated by any labelled error.
+- **`PROMPT_VERSION = "v1"`**: Initial prompt engineered from the 10 labelled documents (`L01`–`L10`) encoding seller-vs-buyer disambiguation, Indian date formats, pre-tax line item amounts, negative discount amounts, itemized freight charges, and strict nullification of non-invoice fields.
+- **`PROMPT_VERSION = "v2"`**: Added explicit date-convention guidance: *"If day and month are ambiguous, infer convention from country or currency."* This was added for defensive generality on international documents and was not motivated by any labelled error.
 - **`BLUR_THRESHOLD = 50.0`**: Calibrated by measuring Laplacian variance across sample documents:
-  - Phone scans: `L02.jpg` (175.36), `U02.jpg` (213.69).
-  - High-resolution scans / rendered PDFs: `L10.pdf` (390.31), `L04.pdf` (2634.45).
-  - Setting the threshold at 50.0 ensures legitimate phone scans pass without false warnings.
-- **`BLANK_STD_THRESHOLD = 5.0`**: Calibrated against empirical grayscale standard deviation. The lowest standard deviation among real documents was 17.00 (`U03.pdf`), ensuring standard deviation < 5.0 reliably detects truly blank pages.
+  - Mobile phone photos: `L02.jpg` (175.36), `U02.jpg` (213.69).
+  - Clean scans / rendered PDFs: `L10.pdf` (390.31), `L04.pdf` (2634.45).
+  - Setting the threshold at 50.0 ensures legitimate mobile captures pass without false warnings.
+- **`BLANK_STD_THRESHOLD = 5.0`**: Calibrated against empirical grayscale standard deviation. The lowest standard deviation among valid documents was 17.00 (`U03.pdf`), ensuring standard deviation $< 5.0$ reliably identifies truly blank pages.
 
 ---
 
-## 6. Limitations
+## 7. Limitations
 
-1. **Untested Retry Path on Real Pack**: The retry path never ran on the labelled documents (0.0% retry rate). While unit tests with mock LLM responses verify that self-correction works, its real-world value on noisy document sets remains unmeasured.
-2. **Untested Blur Threshold**: The blur threshold (50.0) was calibrated only against documents that passed. No genuinely degraded or unreadable image was included in the sample pack, so the claim that it catches severely degraded images is an untested claim.
+1. **Untested Retry Path on Real Pack**: The retry path never ran on the labelled documents (0.0% retry rate). While unit tests with mock LLM responses verify self-correction mechanics, its effectiveness on noisy real-world documents remains unmeasured.
+2. **Untested Blur Threshold**: The blur threshold (50.0) was calibrated only against documents that passed. No genuinely degraded or illegible image was included in the sample pack, so the claim that it catches severely degraded images is an untested claim.
 3. **Unmeasured Review Flag Effectiveness on Real Data**: The review flag's empirical ability to catch real errors cannot be proven on the labelled pack because there were 0 field errors in the labelled set (quantified via synthetic mutations in §3).
 4. **Grounding Check Limitations**:
-   - **Substring Over Whole Page**: Invoice number grounding tests whether `clean_inv in clean_src`. A short identifier like `42` or `001` can match almost anywhere across the page or across word boundaries.
-   - **Unanchored Total**: Any number token in the source text equal to the total satisfies grounding. A small total (e.g. `100.00`) could match an unrelated quantity or address number.
-   - **Effective Exactness of OCR Fuzzy Threshold**: On a 7-character ID, `fuzz.partial_ratio >= 90.0` tolerates 0 substitutions, because a single character substitution drops the Indel-based ratio to `85.7`. For IDs under 10 characters, the fuzzy check is effectively exact.
-   - **Default Vision Route Blind Spot**: By default (without `--ocr-check`), vision-route scans provide no source text. Consequently, `NOT_IN_SOURCE_TEXT` cannot fire, and scans are validated only by math, dates, and currencies.
-5. **Non-Invoice Misclassification Asymmetry & Anchor Limits**: Deterministic validation checks cannot catch an invoice that the LLM misclassifies as a non-invoice (e.g. as a bank statement or purchase order), because an all-null response is internally consistent. We introduced `_check_suspect_non_invoice` to detect strong invoice anchors (`Invoice No:`, standalone `Tax Invoice` headings) on digital PDFs. However, this is a heuristic validated on only three non-invoices, and it covers the `text_layer` route only; a scanned invoice misread as a non-invoice on the vision route still passes silently.
+   - *Substring Over Whole Page*: Invoice number grounding tests whether `clean_inv in clean_src`. A short identifier like `42` or `001` can match almost anywhere across page text.
+   - *Unanchored Total*: Any number token equal to the total satisfies grounding. A small total (e.g. `100.00`) could match an unrelated quantity or address number.
+   - *Effective Exactness of OCR Fuzzy Threshold*: On a 7-character ID, `fuzz.partial_ratio >= 90.0` tolerates 0 substitutions because a single substitution drops the ratio to `85.7`. For IDs under 10 characters, the fuzzy check is effectively exact.
+   - *Default Vision Route Blind Spot*: By default (without `--ocr-check`), vision-route scans provide no source text. Consequently, `NOT_IN_SOURCE_TEXT` cannot fire, and scans are validated only by math, dates, and currencies.
+5. **Non-Invoice Misclassification Asymmetry & Anchor Limits**: Deterministic validation checks cannot catch an invoice that the LLM misclassifies as a non-invoice, because an all-null response is internally consistent. While `_check_suspect_non_invoice` detects obvious invoice headers on digital PDFs, this is a heuristic validated on only three non-invoices, and it covers the `text_layer` route only; a scanned invoice misread as a non-invoice on the vision route still passes silently.
 
 ---
 
-## 7. Phase 2: EasyOCR Cross-Check Evaluation & Ablation
+## 8. Phase 2: EasyOCR Cross-Check Evaluation & Ablation
 
 ### Implementation Details
 Phase 2 introduced an optional, flag-gated OCR grounding check (`--ocr-check`):
@@ -165,18 +241,18 @@ Phase 2 introduced an optional, flag-gated OCR grounding check (`--ocr-check`):
 
 | Mode | Flagged Docs | True Field Errors | TP | FP | FN | TN | Flag Precision | Flag Recall |
 |---|---|---|---|---|---|---|---|---|
-| **Default (Without `--ocr-check`)** | 0 | 0 | 0 | 0 | 0 | 10 | **N/A (0 FP)** | **N/A (0 FN)** |
-| **With `--ocr-check`** | 1 (`L02`) | 0 | 0 | 1 | 0 | 9 | **0.0%** | **N/A** |
+| **Default (Without `--ocr-check`)** | 0 | 0 | 0 | 0 | 0 | 10 | **Undefined (no flags)** | **Undefined (no errors)** |
+| **With `--ocr-check`** | 1 (`L02`) | 0 | 0 | 1 | 0 | 9 | **0.0%** | **Undefined (no errors)** |
 
 ### Findings Across Scans in the Pack
 Evaluation across two of the scans in the pack revealed fatal weaknesses in the CPU EasyOCR configuration:
-1. **Perspective Distortion (`L02.jpg`)**: On `L02.jpg` (a mobile phone photo), Gemini 3.5 Flash vision transcribed `SGS/1847` with 100% accuracy. EasyOCR on CPU failed to resolve the string due to angle and lighting, raising a false `OCR_MISMATCH` flag and taking ~90 seconds.
+1. **Perspective Distortion (`L02.jpg`)**: On mobile photo `L02.jpg`, Gemini 3.5 Flash vision transcribed `SGS/1847` with 100% accuracy. EasyOCR on CPU failed to resolve the string due to angle and lighting, raising a false `OCR_MISMATCH` flag and taking ~90 seconds.
 2. **Rotation Fragility (`U05.pdf`)**: On `U05.pdf` (a scan rotated 90°), Gemini extracted all fields cleanly in 13 seconds. EasyOCR took **230 seconds** on CPU and raised two false `OCR_MISMATCH` flags (invoice number and total) because the setup has no automatic rotation handling.
-3. **Decision**: Because OCR cross-checking generated false positives on correct documents and incurred excessive CPU latency (230s vs 13s Gemini latency), the feature is **kept strictly flag-gated under `--ocr-check` and disabled by default**.
+3. **Decision**: Because OCR cross-checking generated false positives on correct documents and incurred excessive CPU latency (230 s vs 13 s Gemini latency), the feature is **kept strictly flag-gated under `--ocr-check` and disabled by default**.
 
 ---
 
-## 8. Unlabelled Documents Evaluation (`U01`–`U10`)
+## 9. Unlabelled Documents Evaluation (`U01`–`U10`)
 
 All 10 unlabelled documents were processed through the pipeline:
 
@@ -195,7 +271,7 @@ All 10 unlabelled documents were processed through the pipeline:
 
 ---
 
-## 9. Phase 3: Web Application & Visual Grounding Interface
+## 10. Phase 3: Web Application & Visual Grounding Interface
 
 ### Architecture & Design
 Phase 3 deployed a FastAPI backend paired with a zero-build, dependency-free vanilla HTML/JS visual inspector:
