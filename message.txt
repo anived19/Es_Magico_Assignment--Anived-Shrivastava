@@ -1,0 +1,42 @@
+fix: harden pipeline selection, regional grounding, and evaluation reporting
+
+- Pipeline retry & selection rules:
+  - Fix attempt selection in `pipeline.py`: use `(a[0] is None, len(a[1]))` tuple key
+    so parsed invoices always beat failed schema parses (None), with first attempt winning ties.
+  - Define `NON_RETRYABLE` issues (`AMBIGUOUS_TYPE`, `OCR_MISMATCH`, `OCR_UNAVAILABLE`,
+    `SUSPECT_NON_INVOICE`) to prevent wasted second calls and avoid forcing Gemini to alter
+    correct answers upon OCR discrepancies.
+  - Handle EasyOCR missing dependency via explicit `ImportError` exit message; record
+    runtime OCR failures as `OCR_UNAVAILABLE` issues rather than dropping checks silently.
+
+- Regional formatting & grounding checks:
+  - Add dual Anglo/Indian and European number formatting support in `_matches_amount`
+    using `(?:\d[\d.,]*\d|\d+)`, resolving false grounding flags on comma decimals (`9.900,80 €`).
+  - Add `_check_suspect_non_invoice` using `re.MULTILINE` and `\binvoice\s*(?:no\b|number\b|#)`
+    to detect digital invoices misclassified as non-invoices without false-flagging statements/POs.
+  - Separate `IssueCode.OCR_MISMATCH` from `NOT_IN_SOURCE_TEXT` for accurate diagnostic reporting.
+  - Make date validation time-independent via injectable `today: date | None = None` parameter.
+  - Define `AMBIGUOUS_DOCUMENT_TYPES` as a module constant and streamline single checks.
+
+- Schema & Prompts:
+  - Override `Result.model_dump()` to ensure `is_invoice` is serialized as the first key.
+  - Add date convention guidance to system prompt and bump `PROMPT_VERSION` to `v2`.
+
+- CLI & Evaluation Harness:
+  - Move `logging.basicConfig()` into `main()` in both `extract.py` and `evaluate.py`.
+  - Filter hidden files and non-document extensions in directory mode; prevent stem collisions.
+  - Replace `ValueError` on duplicate stems in `evaluate.py` with clean logged errors and return code 1.
+  - Format 0/0 precision and recall in `evaluation/report.py` as "Undefined" instead of misleading 0.0%.
+
+- Testing & Verification:
+  - Add unit test suite in `tests/test_pipeline.py` verifying retry selection, schema fallbacks,
+    non-retryable issue handling, and API failure gracefully returning unavailable results.
+  - Add `tests/test_mutation.py` testing 9 synthetic defect classes, measuring 100% recall and precision.
+  - Add unit tests for `SUSPECT_NON_INVOICE` and injectable reference dates in `tests/test_checks.py`.
+  - Mechanically verify all 20 deliverables in `outputs/` have 0 unavailable results and non-zero costs.
+
+- Documentation:
+  - Verify official pricing source on `ai.google.dev/pricing` (checked Nov 22, 2026; $0.75 / $3.75 per 1M tokens),
+    confirming thinking tokens are billed as output tokens.
+  - Document unlabelled documents table (`U01`-`U10`), `U05` rotated scan findings, and grounding limitations in `REPORT.md`.
+  - Polish README with test commands, pricing context, and sample pack instructions.
