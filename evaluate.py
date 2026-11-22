@@ -15,8 +15,8 @@ logger = logging.getLogger("evaluate")
 DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".png", ".jpg", ".jpeg"}
 
 
-def find_document_for_stem(stem: str, doc_dir: Path) -> Path | None:
-    """Locate matching document file by stem, raising if multiple matches exist."""
+def find_document_for_stem(stem: str, doc_dir: Path) -> tuple[Path | None, str | None]:
+    """Locate matching document file by stem, detecting ambiguous extensions."""
     candidates = sorted(
         [
             p
@@ -26,8 +26,8 @@ def find_document_for_stem(stem: str, doc_dir: Path) -> Path | None:
     )
     if len(candidates) > 1:
         names = [c.name for c in candidates]
-        raise ValueError(f"Ambiguous document matches for stem '{stem}': {names}")
-    return candidates[0] if candidates else None
+        return None, f"Ambiguous document matches for stem '{stem}': {names}"
+    return (candidates[0] if candidates else None), None
 
 
 def main() -> int:
@@ -72,12 +72,10 @@ def main() -> int:
     missing_docs: list[str] = []
     for lf in label_files:
         stem = lf.stem
-        try:
-            doc_path = find_document_for_stem(stem, docs_dir)
-        except ValueError as err:
-            logger.error(str(err))
+        doc_path, err_msg = find_document_for_stem(stem, docs_dir)
+        if err_msg:
+            logger.error(err_msg)
             return 1
-
         if not doc_path:
             missing_docs.append(stem)
         else:

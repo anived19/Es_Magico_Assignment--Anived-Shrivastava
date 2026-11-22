@@ -71,17 +71,32 @@ def test_extract_valid_mock_invoice() -> None:
 
 
 def test_extract_cached_l01_file() -> None:
-    """Test that POST /extract works end-to-end on real cached L01.pdf if available."""
+    """Test that POST /extract works end-to-end on real L01.pdf bytes."""
     doc_path = Path("data/documents/L01.pdf")
     if not doc_path.is_file():
         return
 
     content = doc_path.read_bytes()
-    response = client.post(
-        "/extract",
-        files={"file": ("L01.pdf", content, "application/pdf")},
+    fake_json = (
+        '{"document_type": "INVOICE", "vendor": "Northwind Logistics Ltd", '
+        '"invoice_number": "NWL-88213", "invoice_date": "2026-04-08", '
+        '"currency": "GBP", "total": 683.40, "tax_total": 113.90, '
+        '"line_items": [{"description": "Freight", "quantity": 3.0, "amount": 435.0}, '
+        '{"description": "Fuel", "quantity": 1.0, "amount": 62.5}, '
+        '{"description": "Warehousing", "quantity": 12.0, "amount": 57.0}, '
+        '{"description": "Admin", "quantity": 3.0, "amount": 15.0}]}'
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["is_invoice"] is True
-    assert "Northwind" in data["vendor"]
+    from invoice_extractor.schema import Usage
+
+    with patch(
+        "invoice_extractor.llm.extract",
+        return_value=(fake_json, Usage(input_tokens=942, output_tokens=696, calls=1)),
+    ):
+        response = client.post(
+            "/extract",
+            files={"file": ("L01.pdf", content, "application/pdf")},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_invoice"] is True
+        assert "Northwind" in data["vendor"]

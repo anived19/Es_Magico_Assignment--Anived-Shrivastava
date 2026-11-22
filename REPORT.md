@@ -71,12 +71,36 @@ Evaluated on the 10 labelled documents (`L01`–`L10`):
 
 Across the 10 labelled documents:
 - **Misses**: 0 field errors (10/10 documents fully correct).
-- **Review Flag Analysis**:
+- **Review Flag Analysis on Labelled Set**:
   - True Positives (TP): 0
   - False Positives (FP): 0
   - False Negatives (FN): 0
   - True Negatives (TN): 10
   - Precision and recall are undefined: no document was flagged and no document was wrong. This table cannot yet show whether the flag catches errors.
+
+### Mutation Testing: Empirical Review-Flag Measurement
+To objectively measure whether deterministic checks catch real extraction errors, we executed an automated mutation testing harness (`tests/test_mutation.py`) that injected synthetic defects across 9 distinct failure modes on ground-truth invoices:
+
+| Mutation Class | Injected Defect | Triggered Issue Code | Flagged? |
+|---|---|---|---|
+| **Math Reconciliation** | Total altered by +$66.60 | `TOTALS_MISMATCH` | **Yes (TP)** |
+| **Plausible Date Window** | Invoice date set to `2038-01-01` | `INVALID_DATE` | **Yes (TP)** |
+| **Currency Standardization** | Currency altered to non-ISO `GBPX` | `INVALID_CURRENCY` | **Yes (TP)** |
+| **Identifier Hallucination** | Invoice number changed to `FAKE-99999` | `NOT_IN_SOURCE_TEXT` | **Yes (TP)** |
+| **Missing Vendor** | Vendor set to `null` | `MISSING_FIELD` | **Yes (TP)** |
+| **Empty Line Items** | Line items emptied (`[]`) | `MISSING_FIELD` | **Yes (TP)** |
+| **Borderline Document Type** | Document type set to `RECEIPT` | `AMBIGUOUS_TYPE` | **Yes (TP)** |
+| **Non-Invoice Field Leakage** | `BANK_STATEMENT` with populated fields | `NON_INVOICE_HAS_FIELDS` | **Yes (TP)** |
+| **Misclassified Invoice** | Invoice text with `BANK_STATEMENT` type | `SUSPECT_NON_INVOICE` | **Yes (TP)** |
+
+- **Mutation Test Results**:
+  - Injected Defects Caught: **9 / 9**
+  - True Positives (TP): 9
+  - False Negatives (FN): 0
+  - False Positives on Clean Invoices (FP): 0
+  - True Negatives on Clean Invoices (TN): 10
+  - **Empirical Mutation Recall**: **100.0%**
+  - **Empirical Mutation Precision**: **100.0%**
 
 ### Batch & Unlabelled Document Observations
 During an initial full batch run under free-tier quota limits, transient `429` rate-limit errors occurred on documents `U07`–`U10`. Following quota reset, all four documents were re-extracted cleanly without cache. All 20 output deliverables in `outputs/` are complete extractions with 0 `API_FAILURE` deliverables.
@@ -88,20 +112,25 @@ During an initial full batch run under free-tier quota limits, transient `429` r
 Costs are computed deterministically per document using the formula:
 $$\text{Cost} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \$0.75\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \$3.75\right)$$
 
+*Pricing Source: Official Google AI Studio Developer API Pricing (`ai.google.dev/pricing`), Standard Paid Tier for `gemini-3.5-flash` / `gemini-3.6-flash` checked on November 22, 2026 ($0.75 / 1M input tokens, $3.75 / 1M output tokens, valid through December 31, 2026). Google's pricing documentation explicitly states that thinking tokens are billed as output tokens.*
+
+Fresh measurements from un-cached evaluation run (`PROMPT_VERSION = v2`):
+
 | Route | Documents | Mean In Tokens | Mean Out Tokens | Mean USD / Doc | Retry Rate |
 |---|---|---|---|---|---|
-| **Overall** | 10 | 1,330 | 957 | **$0.00458** | 0.0% |
-| **Text Layer** | 7 | 1,168 | 946 | $0.00442 | 0.0% |
-| **Vision** | 3 | 1,710 | 981 | $0.00496 | 0.0% |
+| **Overall** | 10 | 1,344 | 1,094 | **$0.00511** | 0.0% |
+| **Text Layer** | 7 | 1,182 | 1,126 | $0.00511 | 0.0% |
+| **Vision** | 3 | 1,724 | 1,019 | $0.00511 | 0.0% |
 
-- **Token efficiency**: Digital PDFs routing to `text_layer` consume fewer input tokens (mean 1,168) compared to rendered image pages in `vision` (mean 1,710).
+- **Token efficiency**: Digital PDFs routing to `text_layer` consume fewer input tokens (mean 1,182) compared to rendered image pages in `vision` (mean 1,724).
 - **Latency & caching**: Cached runs incur 0 latency and 0 API cost while preserving recorded metadata.
 
 ---
 
 ## 5. Tuning Log
 
-- **`PROMPT_VERSION = "v1"`**: The prompt was engineered upfront from the 10 labelled documents (`L01`–`L10`) to encode seller-vs-buyer rules, Indian date ordering, pre-tax line item amounts, negative discount amounts, and strict nullification of non-invoice fields. Because extraction on the labelled set achieved 100% accuracy on Attempt 1 without prompt alterations, the prompt version remained `v1`.
+- **`PROMPT_VERSION = "v1"`**: Initial prompt engineered from the 10 labelled documents (`L01`–`L10`) encoding seller-vs-buyer rules, Indian date ordering, pre-tax line item amounts, negative discount amounts, and strict nullification of non-invoice fields.
+- **`PROMPT_VERSION = "v2"`**: Added explicit date-convention guidance: *"If day and month are ambiguous, infer convention from country or currency."* This was added for defensive generality on international currency invoices, not motivated by any labelled error.
 - **`BLUR_THRESHOLD = 50.0`**: Calibrated by measuring Laplacian variance across sample documents:
   - Phone scans: `L02.jpg` (175.36), `U02.jpg` (213.69).
   - High-resolution scans / rendered PDFs: `L10.pdf` (390.31), `L04.pdf` (2634.45).
@@ -114,13 +143,13 @@ $$\text{Cost} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \$0.75\right)
 
 1. **Untested Retry Path on Real Pack**: The retry path never ran on the labelled documents (0.0% retry rate). While unit tests with mock LLM responses verify that self-correction works, its real-world value on noisy document sets remains unmeasured.
 2. **Untested Blur Threshold**: The blur threshold (50.0) was calibrated only against documents that passed. No genuinely degraded or unreadable image was included in the sample pack, so the claim that it catches severely degraded images is an untested claim.
-3. **Unmeasured Review Flag Effectiveness**: The review flag's empirical ability to catch real errors cannot be proven on this pack because there were 0 field errors in the labelled set.
+3. **Unmeasured Review Flag Effectiveness on Real Data**: The review flag's empirical ability to catch real errors cannot be proven on the labelled pack because there were 0 field errors in the labelled set (quantified via synthetic mutations in §3).
 4. **Grounding Check Limitations**:
    - **Substring Over Whole Page**: Invoice number grounding tests whether `clean_inv in clean_src`. A short identifier like `42` or `001` can match almost anywhere across the page or across word boundaries.
    - **Unanchored Total**: Any number token in the source text equal to the total satisfies grounding. A small total (e.g. `100.00`) could match an unrelated quantity or address number.
    - **Effective Exactness of OCR Fuzzy Threshold**: On a 7-character ID, `fuzz.partial_ratio >= 90.0` tolerates 0 substitutions, because a single character substitution drops the Indel-based ratio to `85.7`. For IDs under 10 characters, the fuzzy check is effectively exact.
    - **Default Vision Route Blind Spot**: By default (without `--ocr-check`), vision-route scans provide no source text. Consequently, `NOT_IN_SOURCE_TEXT` cannot fire, and scans are validated only by math, dates, and currencies.
-5. **Non-Invoice Misclassification Asymmetry**: Deterministic validation checks cannot catch an invoice that the LLM misclassifies as a non-invoice (e.g. as a bank statement or purchase order), because an all-null response is internally consistent. We introduced `_check_suspect_non_invoice` to detect strong invoice anchors (`Invoice No:`, standalone `Tax Invoice` headings) on digital PDFs, but vision-route scans remain reliant on model classification.
+5. **Non-Invoice Misclassification Asymmetry & Anchor Limits**: Deterministic validation checks cannot catch an invoice that the LLM misclassifies as a non-invoice (e.g. as a bank statement or purchase order), because an all-null response is internally consistent. We introduced `_check_suspect_non_invoice` to detect strong invoice anchors (`Invoice No:`, standalone `Tax Invoice` headings) on digital PDFs. However, this is a heuristic validated on only three non-invoices, and it covers the `text_layer` route only; a scanned invoice misread as a non-invoice on the vision route still passes silently.
 
 ---
 

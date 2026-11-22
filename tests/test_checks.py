@@ -143,10 +143,27 @@ def test_suspect_non_invoice_detection() -> None:
     bank_text = "Harbor Trust Bank Account Statement Balance: 50,000 INR"
     assert not checks.run_checks(non_inv, source_text=bank_text)
 
-    # Document with Invoice No header is flagged as suspect
-    suspicious_text = "Acme Supplies\nInvoice No: INV-9901\nTotal: 500.00"
-    issues = checks.run_checks(non_inv, source_text=suspicious_text)
-    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues)
+    # Document with 'Invoice No:' is flagged as suspect
+    text_inv_no = "Acme Supplies\nInvoice No: INV-9901\nTotal: 500.00"
+    issues_no = checks.run_checks(non_inv, source_text=text_inv_no)
+    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues_no)
+
+    # Document with 'Invoice # 123' (hash without word boundary) is flagged as suspect
+    text_hash = "Tech Corp\nInvoice # 1042\nDue date: 2026-05-01"
+    issues_hash = checks.run_checks(non_inv, source_text=text_hash)
+    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues_hash)
+
+    # Document with standalone 'TAX INVOICE' heading is flagged as suspect
+    text_heading = "Header\nTAX INVOICE\nItems list..."
+    issues_heading = checks.run_checks(non_inv, source_text=text_heading)
+    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues_heading)
+
+    # Real invoice source text misclassified as BANK_STATEMENT must be caught
+    real_inv_text = (
+        "Northwind Logistics Ltd\nTAX INVOICE\nInvoice No: NWL-88213\nTotal Amount: 683.40 GBP"
+    )
+    issues_misclassified = checks.run_checks(non_inv, source_text=real_inv_text)
+    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues_misclassified)
 
 
 def test_date_with_explicit_today_parameter() -> None:

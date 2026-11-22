@@ -3,7 +3,7 @@
 from invoice_extractor.schema import Issue
 
 # Incremented whenever prompting instructions or conventions change
-PROMPT_VERSION: str = "v1"
+PROMPT_VERSION: str = "v2"
 
 SYSTEM: str = (
     "You are an expert document understanding engine for invoice extraction.\n"

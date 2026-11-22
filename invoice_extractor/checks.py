@@ -193,8 +193,10 @@ def _check_suspect_non_invoice(
     """Flag non-invoices if digital source text contains unambiguous invoice headers."""
     if not source_text or invoice.is_invoice is not False:
         return []
-    has_inv_num = bool(re.search(r"(?i)\binvoice\s*(?:no|number|#)\b", source_text))
-    has_tax_heading = bool(re.search(r"(?im)^\s*tax\s+invoice\s*$", source_text))
+    has_inv_num = bool(re.search(r"(?i)\binvoice\s*(?:no\b|number\b|#)", source_text))
+    has_tax_heading = bool(
+        re.search(r"^\s*tax\s+invoice\s*$", source_text, re.MULTILINE | re.IGNORECASE)
+    )
     if has_inv_num or has_tax_heading:
         return [
             Issue(
