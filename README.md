@@ -79,8 +79,8 @@ Edit `.env` to include your credentials:
 ```ini
 GEMINI_API_KEY=your_actual_gemini_api_key
 GEMINI_MODEL=gemini-3.5-flash
-PRICE_INPUT_PER_M_USD=0.75
-PRICE_OUTPUT_PER_M_USD=3.75
+PRICE_INPUT_PER_M_USD=1.5
+PRICE_OUTPUT_PER_M_USD=9.0
 ```
 *Note: Token prices are user-supplied in `.env` based on the official Google AI Studio Developer API pricing page (https://ai.google.dev/pricing), Standard Paid Tier for `gemini-3.5-flash` / `gemini-3.6-flash` checked on November 22, 2026 ($0.75 / 1M input tokens, $3.75 / 1M output tokens, valid through December 31, 2026). Google's pricing documentation explicitly specifies that thinking tokens are billed at the standard output token rate.*
 
