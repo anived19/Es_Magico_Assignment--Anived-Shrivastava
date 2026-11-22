@@ -3,8 +3,8 @@
     "total_documents": 10,
     "labelled_invoices": 9,
     "labelled_non_invoices": 1,
-    "precision": 0.0,
-    "recall": 0.0,
+    "precision": null,
+    "recall": null,
     "field_errors_total": 0,
     "field_errors_flagged": 0
   },
@@ -17,6 +17,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Northwind Logistics Ltd",
         "invoice_number": "NWL-88213",
@@ -56,8 +57,7 @@
           "input_tokens": 942,
           "output_tokens": 696,
           "cost_usd": 0.003317
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -99,6 +99,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Shree Ganesh Stationers",
         "invoice_number": "SGS/1847",
@@ -148,8 +149,7 @@
           "input_tokens": 1719,
           "output_tokens": 1140,
           "cost_usd": 0.005564
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -201,6 +201,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Kaveri Office Mart Pvt Ltd",
         "invoice_number": "KOM/26-27/00418",
@@ -240,8 +241,7 @@
           "input_tokens": 1087,
           "output_tokens": 736,
           "cost_usd": 0.003575
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -283,6 +283,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Meridian Print & Pack LLP",
         "invoice_number": "MPP-2026-0207",
@@ -422,8 +423,7 @@
           "input_tokens": 1833,
           "output_tokens": 1861,
           "cost_usd": 0.008353
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -565,6 +565,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "ORBIT HARDWARE SUPPLIES",
         "invoice_number": "OHS-0261-26",
@@ -634,8 +635,7 @@
           "input_tokens": 1213,
           "output_tokens": 1272,
           "cost_usd": 0.00568
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -707,6 +707,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Anand & Rao Associates",
         "invoice_number": "AR/2026/0093",
@@ -746,8 +747,7 @@
           "input_tokens": 1072,
           "output_tokens": 740,
           "cost_usd": 0.003579
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -789,6 +789,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "PIXEL HARBOR STUDIO",
         "invoice_number": "PHS-1042",
@@ -828,8 +829,7 @@
           "input_tokens": 969,
           "output_tokens": 908,
           "cost_usd": 0.004132
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -871,6 +871,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": false,
         "document_type": "PURCHASE_ORDER",
         "vendor": null,
         "invoice_number": null,
@@ -889,8 +890,7 @@
           "input_tokens": 1059,
           "output_tokens": 411,
           "cost_usd": 0.002335
-        },
-        "is_invoice": false
+        }
       },
       "expected": {
         "is_invoice": false,
@@ -911,6 +911,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "COASTAL FRESH SEAFOODS",
         "invoice_number": "CFS-4471",
@@ -955,8 +956,7 @@
           "input_tokens": 1719,
           "output_tokens": 983,
           "cost_usd": 0.004975
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,
@@ -1003,6 +1003,7 @@
       "all_fields_correct": true,
       "misses": [],
       "predicted": {
+        "is_invoice": true,
         "document_type": "INVOICE",
         "vendor": "Metro Auto Parts",
         "invoice_number": "MAP/D/09-0312",
@@ -1047,8 +1048,7 @@
           "input_tokens": 1691,
           "output_tokens": 819,
           "cost_usd": 0.004339
-        },
-        "is_invoice": true
+        }
       },
       "expected": {
         "is_invoice": true,

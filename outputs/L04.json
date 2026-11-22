@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Meridian Print & Pack LLP",
   "invoice_number": "MPP-2026-0207",
@@ -138,6 +139,5 @@
     "input_tokens": 1833,
     "output_tokens": 1861,
     "cost_usd": 0.008353
-  },
-  "is_invoice": true
+  }
 }

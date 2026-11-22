@@ -8,6 +8,12 @@ from rapidfuzz import fuzz
 from invoice_extractor.config import OCR_FUZZY_RATIO, TOTALS_TOLERANCE
 from invoice_extractor.schema import DocumentType, Invoice, Issue, IssueCode
 
+AMBIGUOUS_DOCUMENT_TYPES: set[DocumentType] = {
+    DocumentType.CREDIT_NOTE,
+    DocumentType.RECEIPT,
+    DocumentType.QUOTATION,
+}
+
 
 def _check_non_invoice_fields(invoice: Invoice) -> Issue | None:
     """Flag non-invoice documents that have any invoice-specific fields populated."""
@@ -56,8 +62,7 @@ def _check_missing_fields(invoice: Invoice) -> list[Issue]:
 
 def _check_ambiguous_type(invoice: Invoice) -> Issue | None:
     """Send borderline financial document types to manual human review."""
-    ambiguous = {DocumentType.CREDIT_NOTE, DocumentType.RECEIPT, DocumentType.QUOTATION}
-    if invoice.document_type in ambiguous:
+    if invoice.document_type in AMBIGUOUS_DOCUMENT_TYPES:
         return Issue(
             IssueCode.AMBIGUOUS_TYPE,
             f"Borderline document type '{invoice.document_type.value}' requires review",
@@ -65,7 +70,7 @@ def _check_ambiguous_type(invoice: Invoice) -> Issue | None:
     return None
 
 
-def _check_date(invoice: Invoice) -> Issue | None:
+def _check_date(invoice: Invoice, today: date | None = None) -> Issue | None:
     """Validate that the invoice date is a realistic ISO date within allowed range."""
     if invoice.is_invoice is not True or not invoice.invoice_date:
         return None
@@ -74,9 +79,9 @@ def _check_date(invoice: Invoice) -> Issue | None:
     except ValueError:
         return Issue(IssueCode.INVALID_DATE, f"Date '{invoice.invoice_date}' is not ISO YYYY-MM-DD")
 
-    min_date = date(2000, 1, 1)
-    max_date = date.today() + timedelta(days=1)
-    if not (min_date <= parsed <= max_date):
+    ref_date = today or date.today()
+    max_date = ref_date + timedelta(days=1)
+    if not (date(2000, 1, 1) <= parsed <= max_date):
         return Issue(
             IssueCode.INVALID_DATE,
             f"Date '{invoice.invoice_date}' outside plausible range (2000-01-01 to {max_date})",
@@ -119,14 +124,13 @@ def _check_totals(invoice: Invoice) -> Issue | None:
 
 def _matches_amount(token: str, expected: float) -> bool:
     """Check if a numeric token matches expected amount in Anglo/Indian or European format."""
-    # Interpretation 1: Standard/Anglo/Indian (comma as thousands, dot as decimal)
     try:
         val1 = float(token.replace(",", ""))
         if abs(val1 - expected) <= 0.01:
             return True
     except ValueError:
         pass
-    # Interpretation 2: European format (dot as thousands, comma as decimal)
+
     try:
         val2 = float(token.replace(".", "").replace(",", "."))
         if abs(val2 - expected) <= 0.01:
@@ -151,50 +155,72 @@ def _check_grounding(
         clean_src = re.sub(r"[^\w]", "", source_text.lower())
         if is_ocr:
             grounded = fuzz.partial_ratio(clean_inv, clean_src) >= OCR_FUZZY_RATIO
+            if not grounded:
+                issues.append(
+                    Issue(
+                        IssueCode.OCR_MISMATCH,
+                        f"Invoice number '{invoice.invoice_number}' not grounded in OCR text",
+                    )
+                )
         else:
             grounded = clean_inv in clean_src
-        if not grounded:
-            issues.append(
-                Issue(
-                    IssueCode.NOT_IN_SOURCE_TEXT,
-                    f"Invoice number '{invoice.invoice_number}' not grounded in source text",
+            if not grounded:
+                issues.append(
+                    Issue(
+                        IssueCode.NOT_IN_SOURCE_TEXT,
+                        f"Invoice number '{invoice.invoice_number}' not grounded in source text",
+                    )
                 )
-            )
 
     if invoice.total is not None:
         raw_tokens = re.findall(r"(?:\d[\d.,]*\d|\d+)", source_text)
         if not any(_matches_amount(tok, invoice.total) for tok in raw_tokens):
+            code = IssueCode.OCR_MISMATCH if is_ocr else IssueCode.NOT_IN_SOURCE_TEXT
+            desc = "OCR text" if is_ocr else "source text"
             issues.append(
                 Issue(
-                    IssueCode.NOT_IN_SOURCE_TEXT,
-                    f"Invoice total {invoice.total:.2f} not grounded in source text",
+                    code,
+                    f"Invoice total {invoice.total:.2f} not grounded in {desc}",
                 )
             )
     return issues
+
+
+def _check_suspect_non_invoice(
+    invoice: Invoice,
+    source_text: str | None,
+) -> list[Issue]:
+    """Flag non-invoices if digital source text contains unambiguous invoice headers."""
+    if not source_text or invoice.is_invoice is not False:
+        return []
+    has_inv_num = bool(re.search(r"(?i)\binvoice\s*(?:no|number|#)\b", source_text))
+    has_tax_heading = bool(re.search(r"(?im)^\s*tax\s+invoice\s*$", source_text))
+    if has_inv_num or has_tax_heading:
+        return [
+            Issue(
+                IssueCode.SUSPECT_NON_INVOICE,
+                "Document classified as non-invoice but contains clear invoice headers",
+            )
+        ]
+    return []
 
 
 def run_checks(
     invoice: Invoice,
     source_text: str | None = None,
     is_ocr: bool = False,
+    today: date | None = None,
 ) -> list[Issue]:
     """Execute all pure deterministic validation checks against an extracted invoice."""
-    issues: list[Issue] = []
-    non_inv_issue = _check_non_invoice_fields(invoice)
-    if non_inv_issue:
-        issues.append(non_inv_issue)
+    single_checks = [
+        _check_non_invoice_fields(invoice),
+        _check_ambiguous_type(invoice),
+        _check_date(invoice, today=today),
+        _check_currency(invoice),
+        _check_totals(invoice),
+    ]
+    issues = [iss for iss in single_checks if iss is not None]
     issues.extend(_check_missing_fields(invoice))
-    ambig_issue = _check_ambiguous_type(invoice)
-    if ambig_issue:
-        issues.append(ambig_issue)
-    date_issue = _check_date(invoice)
-    if date_issue:
-        issues.append(date_issue)
-    curr_issue = _check_currency(invoice)
-    if curr_issue:
-        issues.append(curr_issue)
-    totals_issue = _check_totals(invoice)
-    if totals_issue:
-        issues.append(totals_issue)
     issues.extend(_check_grounding(invoice, source_text, is_ocr=is_ocr))
+    issues.extend(_check_suspect_non_invoice(invoice, source_text))
     return issues

@@ -42,7 +42,8 @@ def test_grounding_fuzzy_matching_for_ocr() -> None:
 
     # With is_ocr=True, partial_ratio >= 90 matches
     issues_ocr = checks.run_checks(inv, source_text=ocr_source, is_ocr=True)
-    assert not any(i.code == IssueCode.NOT_IN_SOURCE_TEXT for i in issues_ocr)
+    disallowed = {IssueCode.NOT_IN_SOURCE_TEXT, IssueCode.OCR_MISMATCH}
+    assert not any(i.code in disallowed for i in issues_ocr)
 
     # With is_ocr=False (strict), exact substring fails
     issues_strict = checks.run_checks(inv, source_text=ocr_source, is_ocr=False)

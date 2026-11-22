@@ -1,4 +1,5 @@
 {
+  "is_invoice": false,
   "document_type": "PERSONAL_OR_OTHER",
   "vendor": null,
   "invoice_number": null,
@@ -17,6 +18,5 @@
     "input_tokens": 905,
     "output_tokens": 174,
     "cost_usd": 0.001331
-  },
-  "is_invoice": false
+  }
 }

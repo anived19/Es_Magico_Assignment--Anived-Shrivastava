@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Bluefin Cloud Services Inc.",
   "invoice_number": "BF-2026-07-11874",
@@ -38,6 +39,5 @@
     "input_tokens": 972,
     "output_tokens": 971,
     "cost_usd": 0.00437
-  },
-  "is_invoice": true
+  }
 }

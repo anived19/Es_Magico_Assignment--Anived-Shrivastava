@@ -228,8 +228,14 @@ def build_evaluation_report(records: list[dict], output_json_path: Path | None =
         else:
             tn += 1
 
-    recall = (tp / (tp + fn) * 100) if (tp + fn) else 0.0
-    precision = (tp / (tp + fp) * 100) if (tp + fp) else 0.0
+    precision = round(tp / (tp + fp) * 100, 2) if (tp + fp) else None
+    recall = round(tp / (tp + fn) * 100, 2) if (tp + fn) else None
+    precision_str = (
+        f"{precision:.1f}%" if precision is not None else "Undefined (no documents flagged)"
+    )
+    recall_str = (
+        f"{recall:.1f}%" if recall is not None else "Undefined (no field errors in dataset)"
+    )
 
     review_matrix = [
         ["Flagged for review", f"TP = {tp}", f"FP = {fp}", tp + fp],
@@ -242,8 +248,8 @@ def build_evaluation_report(records: list[dict], output_json_path: Path | None =
         tablefmt="github",
     )
     review_summary = (
-        f"Review Flag Precision: {precision:.1f}%\n"
-        f"Review Flag Recall:    {recall:.1f}%\n"
+        f"Review Flag Precision: {precision_str}\n"
+        f"Review Flag Recall:    {recall_str}\n"
         f"Flagged documents contain {flagged_field_errors} of {total_field_errors} field errors.\n"
         "Note: Checks cannot catch an invoice misclassified as non-invoice; "
         f"n={total_docs} is too small for statistical claims."

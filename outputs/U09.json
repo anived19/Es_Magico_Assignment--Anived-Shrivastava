@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Greenleaf Catering Co",
   "invoice_number": "GC/0204",
@@ -38,6 +39,5 @@
     "input_tokens": 971,
     "output_tokens": 789,
     "cost_usd": 0.003687
-  },
-  "is_invoice": true
+  }
 }

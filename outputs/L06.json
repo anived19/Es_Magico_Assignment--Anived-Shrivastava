@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Anand & Rao Associates",
   "invoice_number": "AR/2026/0093",
@@ -38,6 +39,5 @@
     "input_tokens": 1072,
     "output_tokens": 740,
     "cost_usd": 0.003579
-  },
-  "is_invoice": true
+  }
 }

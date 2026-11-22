@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Kaveri Office Mart Pvt Ltd",
   "invoice_number": "KOM/26-27/00418",
@@ -38,6 +39,5 @@
     "input_tokens": 1087,
     "output_tokens": 736,
     "cost_usd": 0.003575
-  },
-  "is_invoice": true
+  }
 }

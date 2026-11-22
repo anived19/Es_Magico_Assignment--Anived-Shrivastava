@@ -10,22 +10,33 @@ from evaluation.report import build_evaluation_report, evaluate_document
 from invoice_extractor import cache
 from invoice_extractor.pipeline import process
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    stream=sys.stderr,
-)
 logger = logging.getLogger("evaluate")
+
+DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".png", ".jpg", ".jpeg"}
 
 
 def find_document_for_stem(stem: str, doc_dir: Path) -> Path | None:
-    """Locate matching document file by stem regardless of file extension."""
-    candidates = list(doc_dir.glob(f"{stem}.*"))
+    """Locate matching document file by stem, raising if multiple matches exist."""
+    candidates = sorted(
+        [
+            p
+            for p in doc_dir.glob(f"{stem}.*")
+            if p.is_file() and p.suffix.lower() in DOCUMENT_EXTENSIONS
+        ]
+    )
+    if len(candidates) > 1:
+        names = [c.name for c in candidates]
+        raise ValueError(f"Ambiguous document matches for stem '{stem}': {names}")
     return candidates[0] if candidates else None
 
 
 def main() -> int:
     """Execute evaluation harness across all labelled files and report findings."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
     parser = argparse.ArgumentParser(description="Evaluate pipeline against ground truth labels.")
     parser.add_argument("--labels-dir", type=str, default="data/labels", help="Labels folder")
     parser.add_argument("--docs-dir", type=str, default="data/documents", help="Documents folder")
@@ -61,7 +72,12 @@ def main() -> int:
     missing_docs: list[str] = []
     for lf in label_files:
         stem = lf.stem
-        doc_path = find_document_for_stem(stem, docs_dir)
+        try:
+            doc_path = find_document_for_stem(stem, docs_dir)
+        except ValueError as err:
+            logger.error(str(err))
+            return 1
+
         if not doc_path:
             missing_docs.append(stem)
         else:

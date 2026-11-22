@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "ORBIT HARDWARE SUPPLIES",
   "invoice_number": "OHS-0261-26",
@@ -68,6 +69,5 @@
     "input_tokens": 1213,
     "output_tokens": 1272,
     "cost_usd": 0.00568
-  },
-  "is_invoice": true
+  }
 }

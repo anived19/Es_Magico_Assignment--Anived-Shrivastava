@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Sakura Tea Traders B.V.",
   "invoice_number": "2026/0314",
@@ -38,6 +39,5 @@
     "input_tokens": 978,
     "output_tokens": 952,
     "cost_usd": 0.004304
-  },
-  "is_invoice": true
+  }
 }

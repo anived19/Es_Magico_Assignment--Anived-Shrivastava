@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "COASTAL FRESH SEAFOODS",
   "invoice_number": "CFS-4471",
@@ -43,6 +44,5 @@
     "input_tokens": 1719,
     "output_tokens": 983,
     "cost_usd": 0.004975
-  },
-  "is_invoice": true
+  }
 }

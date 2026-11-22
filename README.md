@@ -1,6 +1,6 @@
 # Invoice Extraction Pipeline
 
-A clean, production-grade invoice extraction pipeline with deterministic validation, honest measurement, and complete cost accounting.
+An invoice extraction pipeline with deterministic validation, honest measurement, and complete cost accounting. For detailed methodology, empirical measurements, failure analysis, and ablation findings, see [REPORT.md](REPORT.md).
 
 Input: a PDF or image (digital invoice, mobile phone scan, or non-invoice such as a bank statement).  
 Output: validated JSON conforming to the target schema, accompanied by a `needs_review` flag and granular review reasons.
@@ -82,6 +82,7 @@ GEMINI_MODEL=gemini-3.5-flash
 PRICE_INPUT_PER_M_USD=0.75
 PRICE_OUTPUT_PER_M_USD=3.75
 ```
+*Note: Token prices are user-supplied in `.env` based on the official Google Gemini 3.5 Flash rate card published in November 2024 ($0.75 / 1M input tokens, $3.75 / 1M output tokens).*
 
 ### 3. Data Directory Placement
 
@@ -89,11 +90,17 @@ Place your test files inside `data/`:
 - `data/documents/` — PDFs and images (`L01.pdf`..`L10.pdf`, `U01.pdf`..`U10.pdf`, `.jpg`, etc.)
 - `data/labels/` — Ground truth JSON labels (`L01.json`..`L10.json`)
 
-Note: `data/`, `.cache/`, and `.env` are gitignored to prevent secret and data leakage.
+*Note: Test files are user-supplied from the Es Magico assignment pack. A fresh clone will not include them. `data/`, `.cache/`, and `.env` are gitignored to prevent secret and data leakage.*
 
 ---
 
 ## Usage Commands
+
+### Run the Automated Test Suite
+```bash
+pytest -v
+```
+Executes all unit and integration tests across ingestion, validation checks, pipeline retry logic, evaluation matching, and API endpoints.
 
 ### Extract a Single File (JSON on stdout)
 ```bash

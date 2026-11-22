@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Blue Lotus Hospitality",
   "invoice_number": "BL/GA/26/5528",
@@ -33,6 +34,5 @@
     "input_tokens": 1035,
     "output_tokens": 740,
     "cost_usd": 0.003551
-  },
-  "is_invoice": true
+  }
 }

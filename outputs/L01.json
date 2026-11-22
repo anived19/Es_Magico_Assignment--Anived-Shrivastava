@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Northwind Logistics Ltd",
   "invoice_number": "NWL-88213",
@@ -38,6 +39,5 @@
     "input_tokens": 942,
     "output_tokens": 696,
     "cost_usd": 0.003317
-  },
-  "is_invoice": true
+  }
 }

@@ -1,4 +1,5 @@
 {
+  "is_invoice": true,
   "document_type": "INVOICE",
   "vendor": "Metro Auto Parts",
   "invoice_number": "MAP/D/09-0312",
@@ -43,6 +44,5 @@
     "input_tokens": 1691,
     "output_tokens": 819,
     "cost_usd": 0.004339
-  },
-  "is_invoice": true
+  }
 }

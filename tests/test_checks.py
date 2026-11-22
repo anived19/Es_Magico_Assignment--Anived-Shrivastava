@@ -128,3 +128,43 @@ def test_grounding_passes_and_fails() -> None:
     )
     eu_issues = checks.run_checks(eu_inv, source_text=eu_source)
     assert not any(i.code == IssueCode.NOT_IN_SOURCE_TEXT for i in eu_issues)
+
+    # OCR grounding failure uses OCR_MISMATCH
+    ocr_source = "Unrelated scanned text"
+    ocr_issues = checks.run_checks(eu_inv, source_text=ocr_source, is_ocr=True)
+    assert any(i.code == IssueCode.OCR_MISMATCH for i in ocr_issues)
+
+
+def test_suspect_non_invoice_detection() -> None:
+    """Verify suspect non-invoices are flagged if source text contains invoice headers."""
+    non_inv = Invoice(document_type=DocumentType.BANK_STATEMENT)
+
+    # Clean statement without invoice headers passes
+    bank_text = "Harbor Trust Bank Account Statement Balance: 50,000 INR"
+    assert not checks.run_checks(non_inv, source_text=bank_text)
+
+    # Document with Invoice No header is flagged as suspect
+    suspicious_text = "Acme Supplies\nInvoice No: INV-9901\nTotal: 500.00"
+    issues = checks.run_checks(non_inv, source_text=suspicious_text)
+    assert any(i.code == IssueCode.SUSPECT_NON_INVOICE for i in issues)
+
+
+def test_date_with_explicit_today_parameter() -> None:
+    """Validate that date checks respect injected reference today date."""
+    fixed_today = date(2026, 6, 1)
+    inv = Invoice(
+        document_type=DocumentType.INVOICE,
+        vendor="Acme",
+        invoice_number="INV-1",
+        invoice_date="2026-06-02",  # exactly tomorrow relative to fixed_today -> valid
+        currency="USD",
+        total=10.0,
+        line_items=[LineItem(description="x", amount=10.0)],
+    )
+    issues = checks.run_checks(inv, today=fixed_today)
+    assert not any(i.code == IssueCode.INVALID_DATE for i in issues)
+
+    # 3 days in future -> invalid
+    inv.invoice_date = "2026-06-05"
+    issues = checks.run_checks(inv, today=fixed_today)
+    assert any(i.code == IssueCode.INVALID_DATE for i in issues)

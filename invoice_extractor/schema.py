@@ -39,6 +39,9 @@ class IssueCode(StrEnum):
     INVALID_CURRENCY = "INVALID_CURRENCY"
     TOTALS_MISMATCH = "TOTALS_MISMATCH"
     NOT_IN_SOURCE_TEXT = "NOT_IN_SOURCE_TEXT"
+    OCR_MISMATCH = "OCR_MISMATCH"
+    OCR_UNAVAILABLE = "OCR_UNAVAILABLE"
+    SUSPECT_NON_INVOICE = "SUSPECT_NON_INVOICE"
     LOW_SHARPNESS = "LOW_SHARPNESS"
 
 
@@ -122,6 +125,16 @@ class Result(Invoice):
             cost_usd=0.0,
         )
     )
+
+    def model_dump(self, *args, **kwargs) -> dict:
+        """Dump model dictionary ensuring is_invoice appears as the first key."""
+        data = super().model_dump(*args, **kwargs)
+        if "is_invoice" in data:
+            return {
+                "is_invoice": data["is_invoice"],
+                **{k: v for k, v in data.items() if k != "is_invoice"},
+            }
+        return data
 
     @classmethod
     def unavailable(

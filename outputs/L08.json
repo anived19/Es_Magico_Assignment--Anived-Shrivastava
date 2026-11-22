@@ -1,4 +1,5 @@
 {
+  "is_invoice": false,
   "document_type": "PURCHASE_ORDER",
   "vendor": null,
   "invoice_number": null,
@@ -17,6 +18,5 @@
     "input_tokens": 1059,
     "output_tokens": 411,
     "cost_usd": 0.002335
-  },
-  "is_invoice": false
+  }
 }
